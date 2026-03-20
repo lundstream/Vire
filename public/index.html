@@ -623,6 +623,12 @@
       <span class="topbar-title">Vire</span>
     </div>
     <div class="topbar-right">
+      <button class="btn-icon" id="infoBtn" title="Usage guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </button>
+      <button class="btn-icon" id="psBtn" title="Script deployment">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      </button>
       <span class="user-badge" id="userBadge"></span>
       <button class="btn-icon" id="themeToggle" title="Toggle theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -830,6 +836,57 @@
       </div>
       <div class="modal-body" id="kpiOverlayBody">
         <div style="text-align:center;padding:40px;"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info Guide Modal -->
+  <div class="modal-overlay" id="infoModal">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <h2>Usage Guide</h2>
+        <button class="modal-close" id="infoModalClose">&times;</button>
+      </div>
+      <div class="modal-body" style="line-height:1.7;">
+        <h3 style="margin-top:0;">Dashboard</h3>
+        <p>The KPI cards at the top show totals for servers, online/offline status, pending updates, and more. Click any card to see a detailed list of the servers behind that number.</p>
+        <h3>Servers</h3>
+        <p>Browse or search all servers. Click a row to open the server detail popup with tabs for Network, Disks, Roles, Services, Local Admins, Missing Updates, Event Errors, Firewall, Local Policies, and Logbook.</p>
+        <h3>Maintenance</h3>
+        <p>View all servers currently in maintenance mode. You can set or end maintenance from the server detail popup — a banner at the top of the popup shows the current state.</p>
+        <h3>Logbook</h3>
+        <p>A chronological log of notes across all servers. Add entries directly from the server detail popup using the <strong>Add Logbook Entry</strong> button at the top.</p>
+        <h3>Domains</h3>
+        <p>Switch between <strong>GPO</strong> and <strong>DNS</strong> sub-tabs to review Group Policy Objects and DNS zones collected from domain controllers.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PowerShell Deployment Modal -->
+  <div class="modal-overlay" id="psModal">
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-header">
+        <h2>Script Deployment</h2>
+        <button class="modal-close" id="psModalClose">&times;</button>
+      </div>
+      <div class="modal-body" style="line-height:1.7;">
+        <h3 style="margin-top:0;">Collect-ServerInventory.ps1</h3>
+        <p>The PowerShell collection script gathers OS info, hardware, network, disks, patches, services, roles, security status, firewall rules, GPOs, local policies, event logs, and more. All operations are read-only.</p>
+        <h3>Parameters</h3>
+        <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">.\Collect-ServerInventory.ps1 -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+        <h3>Deployment as Scheduled Task</h3>
+        <ol>
+          <li>Copy <strong>Collect-ServerInventory.ps1</strong> to each server (e.g. <code>C:\Scripts\</code>).</li>
+          <li>Create a Scheduled Task running as <strong>SYSTEM</strong>.</li>
+          <li>Set the action to:<br>
+            <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">powershell.exe -ExecutionPolicy Bypass -File "C:\Scripts\Collect-ServerInventory.ps1" -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+          </li>
+          <li>Set the trigger to run every <strong>4–6 hours</strong>.</li>
+        </ol>
+        <h3>GPO Deployment (recommended)</h3>
+        <p>Use a Group Policy Preference <strong>Scheduled Task</strong> to push the script and schedule to all servers at once — no manual per-server setup needed.</p>
+        <h3>API Key</h3>
+        <p>The API key is configured in <strong>settings.json</strong> on the Vire server under the <code>apiKey</code> field.</p>
       </div>
     </div>
   </div>

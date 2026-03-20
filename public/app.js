@@ -21,6 +21,7 @@
     await checkAuth();
     setupTabs();
     setupTheme();
+    setupHelpModals();
     setupLogout();
     setupModalClose();
     setupColumnSort();
@@ -64,6 +65,18 @@
       document.documentElement.setAttribute('data-theme', isLight ? '' : 'light');
       localStorage.setItem('inv-theme', isLight ? 'dark' : 'light');
       rebuildCharts();
+    });
+  }
+
+  // =========================================================================
+  //  HELP MODALS
+  // =========================================================================
+  function setupHelpModals() {
+    ['info', 'ps'].forEach(key => {
+      const modal = document.getElementById(key + 'Modal');
+      document.getElementById(key + 'Btn').addEventListener('click', () => modal.classList.add('open'));
+      document.getElementById(key + 'ModalClose').addEventListener('click', () => modal.classList.remove('open'));
+      modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
     });
   }
 
