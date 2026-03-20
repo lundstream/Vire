@@ -802,10 +802,6 @@
 
     // Logbook tab
     html += `<div class="detail-tab-content" id="dt-logbook">`;
-    html += `<div class="logbook-form" style="margin-bottom:16px;display:flex;gap:8px;">
-      <input type="text" class="search-input" id="logbookInput" placeholder="Add a logbook entry..." style="flex:1;">
-      <button class="btn btn-primary" id="logbookAddBtn" style="white-space:nowrap;">Add Entry</button>
-    </div>`;
     html += `<div id="logbookEntries"><div style="text-align:center;padding:16px;color:var(--text3);"><div class="spinner"></div></div></div>`;
     html += `<div id="logbookPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;"></div>`;
     html += `</div>`;
@@ -859,26 +855,6 @@
     // Logbook
     logbookPage = 1;
     loadLogbook(s.hostname, container, 1);
-    const lbInput = container.querySelector('#logbookInput');
-    const lbBtn = container.querySelector('#logbookAddBtn');
-    if (lbBtn) {
-      const submitEntry = async () => {
-        const comment = lbInput.value.trim();
-        if (!comment) return;
-        lbBtn.disabled = true;
-        try {
-          await fetch('/api/servers/' + encodeURIComponent(s.hostname) + '/logbook', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ comment })
-          });
-          lbInput.value = '';
-          loadLogbook(s.hostname, container, 1);
-        } catch (e) { console.error(e); }
-        lbBtn.disabled = false;
-      };
-      lbBtn.addEventListener('click', submitEntry);
-      lbInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitEntry(); });
-    }
 
     // Maintenance mode buttons
     const maintStartBtn = container.querySelector('#maintStartBtn');
