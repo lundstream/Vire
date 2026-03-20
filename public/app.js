@@ -24,6 +24,12 @@
     setupHelpModals();
     setupLogout();
     setupModalClose();
+
+    // Lock body scroll when any modal is open
+    new MutationObserver(() => {
+      const anyOpen = document.querySelector('.modal-overlay.open');
+      document.body.classList.toggle('modal-open', !!anyOpen);
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
     setupColumnSort();
     await loadDashboard();
     await loadServers();
