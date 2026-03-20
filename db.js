@@ -338,6 +338,26 @@ function initSchema() {
   // Purge legacy maintenance auto-entries from logbook
   d.exec(`DELETE FROM server_logbook WHERE comment LIKE '%Maintenance started%' OR comment LIKE '%Maintenance ended%'`);
 
+  // --- CVE Store ---
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS cves (
+      id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      published TEXT,
+      fetched_at TEXT DEFAULT (datetime('now')),
+      cvss_score REAL,
+      kev INTEGER DEFAULT 0,
+      has_exploit INTEGER DEFAULT 0,
+      has_patch INTEGER DEFAULT 0,
+      vendor TEXT,
+      discovered TEXT,
+      epss_score REAL
+    )
+  `);
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_cves_published ON cves(published);`); } catch(e){}
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_cves_cvss ON cves(cvss_score);`); } catch(e){}
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_cves_vendor ON cves(vendor COLLATE NOCASE);`); } catch(e){}
+
   // Migrations — add columns if missing
   try { d.exec(`ALTER TABLE servers ADD COLUMN nla_enabled INTEGER;`); } catch(e){}
   try { d.exec(`ALTER TABLE server_firewall_rules ADD COLUMN rule_source TEXT;`); } catch(e){}
@@ -1145,6 +1165,209 @@ function processHeartbeat(data) {
   return serverId;
 }
 
+// =========================================================================
+//  CVE FUNCTIONS
+// =========================================================================
+
+function extractCvssFromObj(it) {
+  if (!it) return null;
+  if (typeof it.cvss === 'number') return it.cvss;
+  if (it.cvss && !isNaN(Number(it.cvss))) return Number(it.cvss);
+  if (it.cvss3 && it.cvss3.baseScore) return Number(it.cvss3.baseScore);
+  try {
+    if (it.metrics) {
+      const m = it.metrics;
+      if (m.cvssMetricV31 && m.cvssMetricV31.length) return Number(m.cvssMetricV31[0].cvssData.baseScore);
+      if (m.cvssMetricV40 && m.cvssMetricV40.length) return Number(m.cvssMetricV40[0].cvssData.baseScore);
+      if (m.cvssMetricV30 && m.cvssMetricV30.length) return Number(m.cvssMetricV30[0].cvssData.baseScore);
+      if (m.cvssMetricV2 && m.cvssMetricV2.length) return Number(m.cvssMetricV2[0].cvssData.baseScore);
+    }
+  } catch (e) {}
+  try {
+    const cont = it.containers || null;
+    if (cont) {
+      const sources = [].concat(cont.adp || [], cont.cna ? [cont.cna] : []);
+      for (const a of sources) {
+        if (a.metrics && a.metrics.length) {
+          for (const m of a.metrics) {
+            if (m.cvssV4_0 && m.cvssV4_0.baseScore) return Number(m.cvssV4_0.baseScore);
+            if (m.cvssV3_1 && m.cvssV3_1.baseScore) return Number(m.cvssV3_1.baseScore);
+            if (m.cvssV3 && m.cvssV3.baseScore) return Number(m.cvssV3.baseScore);
+            if (m.cvssV3_0 && m.cvssV3_0.baseScore) return Number(m.cvssV3_0.baseScore);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function slimCve(row) {
+  let obj;
+  try { obj = JSON.parse(row.data); } catch (e) { obj = {}; }
+  let title = '';
+  if (obj.title) title = obj.title;
+  else if (obj.summary && obj.summary.length < 140) title = obj.summary;
+  else if (obj.cveMetadata && obj.cveMetadata.title) title = obj.cveMetadata.title;
+  else if (Array.isArray(obj.descriptions) && obj.descriptions.length) {
+    const d = obj.descriptions.find(x => x.lang === 'en') || obj.descriptions[0];
+    if (d && d.value && d.value.length < 140) title = d.value;
+  }
+  if (!title && obj.containers && obj.containers.cna) {
+    const cna = obj.containers.cna;
+    if (cna.title) title = cna.title;
+    else if (cna.descriptions && cna.descriptions.length) {
+      const d = cna.descriptions[0];
+      title = d.title || d.value || d.description || '';
+      if (title.length >= 140) title = '';
+    }
+  }
+  if (!title && obj.document && obj.document.title) title = obj.document.title;
+
+  let summary = '';
+  if (obj.details) summary = obj.details;
+  else if (obj.description) summary = typeof obj.description === 'string' ? obj.description : '';
+  else if (obj.summary) summary = obj.summary;
+  else if (Array.isArray(obj.descriptions) && obj.descriptions.length) {
+    const d = obj.descriptions.find(x => x.lang === 'en') || obj.descriptions[0];
+    if (d && d.value) summary = d.value;
+  }
+  if (!summary && obj.containers && obj.containers.cna) {
+    const cna = obj.containers.cna;
+    if (cna.descriptions && cna.descriptions.length) {
+      const desc = cna.descriptions[0];
+      summary = desc.value || desc.description || desc.text || '';
+    } else if (typeof cna.descriptions === 'string') summary = cna.descriptions;
+    else if (cna.title && !summary) summary = cna.title;
+  }
+  if (!summary && obj.document && obj.document.notes && obj.document.notes.length) {
+    const note = obj.document.notes.find(n => n.category === 'summary') || obj.document.notes[0];
+    if (note) summary = note.text || note.title || note.summary || '';
+  }
+  if (summary.length > 2000) summary = summary.slice(0, 2000);
+
+  let cvss = row.cvss_score != null ? row.cvss_score : null;
+  if (cvss == null) cvss = extractCvssFromObj(obj);
+
+  let published = row.published || null;
+  if (!published) {
+    published = obj.Published || obj.published ||
+      (obj.cveMetadata && (obj.cveMetadata.datePublished || obj.cveMetadata.dateUpdated)) ||
+      null;
+  }
+
+  return {
+    id: row.id || '',
+    title: title || '',
+    summary: summary || '',
+    cvss: cvss,
+    published: published,
+    _kev: row.kev || 0,
+    _exploit: row.has_exploit || 0,
+    _patch: row.has_patch || 0,
+    _vendor: row.vendor ? row.vendor.charAt(0).toUpperCase() + row.vendor.slice(1) : '',
+    _epss: row.epss_score != null ? row.epss_score : null
+  };
+}
+
+function upsertCve(id, data, published, cvssScore, enrichment) {
+  const d = getDb();
+  const e = enrichment || {};
+  d.prepare(`
+    INSERT INTO cves (id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET data=excluded.data, published=COALESCE(excluded.published, cves.published), cvss_score=excluded.cvss_score,
+      kev=COALESCE(excluded.kev, cves.kev), has_exploit=COALESCE(excluded.has_exploit, cves.has_exploit),
+      has_patch=COALESCE(excluded.has_patch, cves.has_patch), vendor=excluded.vendor,
+      discovered=COALESCE(excluded.discovered, cves.discovered)
+  `).run(id, typeof data === 'string' ? data : JSON.stringify(data), published || null,
+    cvssScore != null && !isNaN(cvssScore) ? cvssScore : null,
+    e.kev != null ? (e.kev ? 1 : 0) : null,
+    e.has_exploit != null ? (e.has_exploit ? 1 : 0) : null,
+    e.has_patch != null ? (e.has_patch ? 1 : 0) : null,
+    e.vendor || null, e.discovered || null);
+}
+
+function getCves(count, offset, cvssMin) {
+  const d = getDb();
+  if (cvssMin && !isNaN(cvssMin)) {
+    return d.prepare('SELECT id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered, epss_score FROM cves WHERE cvss_score IS NOT NULL AND cvss_score >= ? ORDER BY published DESC, fetched_at DESC LIMIT ? OFFSET ?').all(cvssMin, count, offset).map(slimCve);
+  }
+  return d.prepare('SELECT id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered, epss_score FROM cves ORDER BY published DESC, fetched_at DESC LIMIT ? OFFSET ?').all(count, offset).map(slimCve);
+}
+
+function searchCves(query, limit) {
+  const d = getDb();
+  const like = '%' + query + '%';
+  return d.prepare('SELECT id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered, epss_score FROM cves WHERE id LIKE ? OR vendor LIKE ? ORDER BY published DESC LIMIT ?').all(like, like, limit).map(slimCve);
+}
+
+function getCveCount() {
+  return getDb().prepare('SELECT COUNT(*) as cnt FROM cves').get().cnt;
+}
+
+function getHighRiskCves(count, offset, maxAgeDays, vendor) {
+  const d = getDb();
+  const cutoff = new Date(Date.now() - (maxAgeDays || 90) * 24 * 60 * 60 * 1000).toISOString();
+  let where = 'WHERE published >= ? AND published IS NOT NULL AND cvss_score IS NOT NULL';
+  const params = [cutoff];
+  if (vendor) {
+    const vendors = Array.isArray(vendor) ? vendor : [vendor];
+    where += ` AND lower(vendor) IN (${vendors.map(() => '?').join(',')})`;
+    params.push(...vendors.map(v => v.toLowerCase()));
+  }
+  const sql = `SELECT id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered, epss_score,
+    CAST(
+      (cvss_score * 10)
+      + (CASE WHEN kev = 1 THEN 40 ELSE 0 END)
+      + (CASE WHEN has_exploit = 1 THEN 25 ELSE 0 END)
+      + (CASE WHEN has_patch = 0 THEN 20 ELSE 0 END)
+      + (CASE WHEN julianday('now') - julianday(published) <= 7 THEN 20
+              WHEN julianday('now') - julianday(published) <= 30 THEN 14
+              WHEN julianday('now') - julianday(published) <= 90 THEN 7
+              ELSE 0 END)
+      + (COALESCE(epss_score, 0) * 100)
+    AS REAL) as risk_score
+    FROM cves ${where}
+    ORDER BY risk_score DESC, cvss_score DESC, published DESC
+    LIMIT ? OFFSET ?`;
+  params.push(count || 15, offset || 0);
+  return d.prepare(sql).all(...params).map(row => {
+    const slim = slimCve(row);
+    slim._riskScore = Math.round(row.risk_score);
+    return slim;
+  });
+}
+
+function getCveVendorStats(maxAgeDays) {
+  const d = getDb();
+  const cutoff = new Date(Date.now() - (maxAgeDays || 90) * 24 * 60 * 60 * 1000).toISOString();
+  return d.prepare(`
+    SELECT vendor, COUNT(*) as total,
+      SUM(CASE WHEN cvss_score >= 9.0 THEN 1 ELSE 0 END) as critical,
+      SUM(CASE WHEN cvss_score >= 7.0 AND cvss_score < 9.0 THEN 1 ELSE 0 END) as high,
+      SUM(CASE WHEN kev = 1 THEN 1 ELSE 0 END) as kev_count
+    FROM cves
+    WHERE published >= ? AND vendor IS NOT NULL AND vendor != ''
+    GROUP BY lower(vendor)
+    ORDER BY critical DESC, high DESC, total DESC
+    LIMIT 20
+  `).all(cutoff).map(r => ({
+    vendor: r.vendor.charAt(0).toUpperCase() + r.vendor.slice(1),
+    total: r.total, critical: r.critical, high: r.high, kev_count: r.kev_count
+  }));
+}
+
+function purgeCves(maxAgeDays) {
+  const d = getDb();
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
+  const riskCutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+  const info = d.prepare(`DELETE FROM cves WHERE published < ? AND published IS NOT NULL
+    AND NOT (published >= ? AND (kev = 1 OR has_exploit = 1 OR cvss_score >= 8))`).run(cutoff, riskCutoff);
+  const nullInfo = d.prepare('DELETE FROM cves WHERE published IS NULL AND fetched_at < ?').run(cutoff);
+  return info.changes + nullInfo.changes;
+}
+
 module.exports = {
   getDb, initSchema,
   createUser, getUserByUsername, updateLastLogin, getUsers, deleteUser, updateUserPassword,
@@ -1161,4 +1384,5 @@ module.exports = {
   getGroupMembers, addGroupMember, removeGroupMember,
   getUserAllowedDomains,
   processHeartbeat,
+  upsertCve, getCves, searchCves, getCveCount, getHighRiskCves, getCveVendorStats, purgeCves,
 };

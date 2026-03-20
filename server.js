@@ -5,6 +5,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
+const fetch = require('node-fetch');
 const db = require('./db');
 
 // --- Load settings ---
@@ -463,6 +464,302 @@ app.delete('/api/admin/groups/:id/members/:userId', requireLogin, requireAdmin, 
 });
 
 // =========================================================================
+//  CVE HELPERS & POLLING
+// =========================================================================
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+const VENDOR_BLOCKLIST = new Set([
+  'chrome-cve-admin','security_alert','security-advisories','security','audit',
+  'cna','disclosure','psirt','secure','vulnerabilities','vulnerability','scy',
+  'cve-coordination','ics-cert','cybersecurity','infosec','product-security',
+  'productsecurity','product-cve','csirt','cert-in','certcc','sirt','prodsec',
+  'secalert','secalert_us','responsibledisclosure','vulnreport','reachout',
+  'contact','info','support','nvd','nist','zdi-disclosures','cvd','n/a',
+  'openclaw','open-emr','oretnom23','fabian','iletisim','gfi','nsasoft',
+  'vulncheck','patchstack','wordfence','hackerone','snyk',
+  'checkmarx','sonatype','portswigger','acunetix',
+  'securin','appcheck','vdiscover','idefense','flexera',
+  'veracode','mend','whitesource','incibe','jpcert','kcirt','krcert',
+  'mitre','github',
+  'the','this','that','shared','with','from','for','and',
+  'not','was','has','had','are','were','been','being','have','does',
+  'its','all','any','each','every','some','other','another','such',
+  'cross-site','improper','missing','multiple','remote','local','use',
+  'sql','buffer','stack','heap','integer','null','type','path','file',
+  'server','client','user','admin','system','network','web','application'
+]);
+
+function extractCvssScore(item) {
+  if (!item) return null;
+  if (typeof item.cvss === 'number') return item.cvss;
+  if (item.cvss && !isNaN(Number(item.cvss))) return Number(item.cvss);
+  if (item.cvss3 && item.cvss3.baseScore) return Number(item.cvss3.baseScore);
+  try {
+    if (item.metrics) {
+      const m = item.metrics;
+      if (m.cvssMetricV31 && m.cvssMetricV31.length) return Number(m.cvssMetricV31[0].cvssData.baseScore);
+      if (m.cvssMetricV40 && m.cvssMetricV40.length) return Number(m.cvssMetricV40[0].cvssData.baseScore);
+      if (m.cvssMetricV30 && m.cvssMetricV30.length) return Number(m.cvssMetricV30[0].cvssData.baseScore);
+      if (m.cvssMetricV2 && m.cvssMetricV2.length) return Number(m.cvssMetricV2[0].cvssData.baseScore);
+    }
+  } catch (e) {}
+  try {
+    const cont = item.containers;
+    if (cont) {
+      const sources = [].concat(cont.adp || [], cont.cna ? [cont.cna] : []);
+      for (const a of sources) {
+        if (a.metrics && a.metrics.length) {
+          for (const m of a.metrics) {
+            if (m.cvssV4_0 && m.cvssV4_0.baseScore) return Number(m.cvssV4_0.baseScore);
+            if (m.cvssV3_1 && m.cvssV3_1.baseScore) return Number(m.cvssV3_1.baseScore);
+            if (m.cvssV3 && m.cvssV3.baseScore) return Number(m.cvssV3.baseScore);
+            if (m.cvssV3_0 && m.cvssV3_0.baseScore) return Number(m.cvssV3_0.baseScore);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  try {
+    if (Array.isArray(item.vulnerabilities)) {
+      for (const v of item.vulnerabilities) {
+        if (v && Array.isArray(v.scores)) {
+          for (const sc of v.scores) {
+            if (sc.cvss_v3 && sc.cvss_v3.baseScore) return Number(sc.cvss_v3.baseScore);
+            if (sc.cvss_v4 && sc.cvss_v4.baseScore) return Number(sc.cvss_v4.baseScore);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  const sevText = (item.database_specific && item.database_specific.severity)
+    || (item.document && item.document.aggregate_severity && item.document.aggregate_severity.text)
+    || '';
+  if (sevText) {
+    const sev = String(sevText).toUpperCase();
+    if (sev === 'CRITICAL') return 9.0;
+    if (sev === 'HIGH' || sev === 'IMPORTANT') return 7.5;
+    if (sev === 'MEDIUM' || sev === 'MODERATE') return 5.0;
+    if (sev === 'LOW') return 2.0;
+  }
+  return null;
+}
+
+function extractItemId(it) {
+  if (it.cveMetadata && it.cveMetadata.cveId) return it.cveMetadata.cveId.toUpperCase();
+  try {
+    if (Array.isArray(it.aliases)) {
+      for (const a of it.aliases) {
+        const m = String(a).match(/CVE-\d{4}-\d{4,7}/i);
+        if (m) return m[0].toUpperCase();
+      }
+    }
+  } catch (_) {}
+  try {
+    const s = JSON.stringify(it);
+    const m = s.match(/CVE-\d{4}-\d{4,7}/i);
+    if (m) return m[0].toUpperCase();
+  } catch (_) {}
+  const raw = it.id || it.CVE || it.cve || '';
+  if (raw) {
+    const m = String(raw).match(/CVE-\d{4}-\d{4,7}/i);
+    if (m) return m[0].toUpperCase();
+  }
+  return it.id || '';
+}
+
+function extractItemDate(it, cveId) {
+  const raw = (it.cveMetadata && (it.cveMetadata.datePublished || it.cveMetadata.dateUpdated))
+    || it.Published || it.published
+    || (it.document && it.document.tracking && (it.document.tracking.current_release_date || it.document.tracking.initial_release_date))
+    || null;
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  if (cveId) {
+    const m = cveId.match(/CVE-(\d{4})/i);
+    if (m && Math.abs(d.getFullYear() - parseInt(m[1])) > 2) return null;
+  }
+  return d;
+}
+
+function enrichCveItem(id, item) {
+  const enrichment = {};
+  try {
+    const dateUpdated = item.cveMetadata && item.cveMetadata.dateUpdated;
+    const raw = dateUpdated || item.lastModified || null;
+    if (raw) {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) enrichment.discovered = d.toISOString();
+    }
+  } catch (e) {}
+  try {
+    function isValidVendor(v) {
+      if (!v || v.length <= 2 || v.length > 30) return false;
+      if (VENDOR_BLOCKLIST.has(v.toLowerCase())) return false;
+      if (/^[0-9a-f-]{20,}$/i.test(v)) return false;
+      return true;
+    }
+    if (item.containers && item.containers.cna && item.containers.cna.affected) {
+      const aff = item.containers.cna.affected;
+      if (Array.isArray(aff) && aff.length > 0 && aff[0].vendor && isValidVendor(aff[0].vendor)) {
+        enrichment.vendor = aff[0].vendor;
+      }
+    }
+    if (!enrichment.vendor && item.configurations) {
+      const configs = Array.isArray(item.configurations) ? item.configurations : [item.configurations];
+      outer:
+      for (const cfg of configs) {
+        const nodes = cfg.nodes || (cfg.cpeMatch ? [cfg] : []);
+        for (const node of nodes) {
+          const matches = node.cpeMatch || [];
+          for (const m of matches) {
+            if (m.criteria) {
+              const parts = m.criteria.split(':');
+              if (parts.length > 3 && parts[3] && parts[3] !== '*' && isValidVendor(parts[3])) {
+                enrichment.vendor = parts[3];
+                break outer;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!enrichment.vendor && item.product_tree && item.product_tree.branches) {
+      csafOuter:
+      for (const branch of item.product_tree.branches) {
+        const stack = [branch];
+        while (stack.length) {
+          const node = stack.pop();
+          const cpe = node.product && node.product.product_identification_helper && node.product.product_identification_helper.cpe;
+          if (cpe) {
+            const parts = cpe.replace('cpe:/', 'cpe:2.3:').split(':');
+            if (parts.length > 3 && parts[3] && parts[3] !== '*' && isValidVendor(parts[3])) {
+              enrichment.vendor = parts[3];
+              break csafOuter;
+            }
+          }
+          if (Array.isArray(node.branches)) {
+            for (const child of node.branches) stack.push(child);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  try {
+    let refs = [];
+    if (Array.isArray(item.references)) refs = refs.concat(item.references);
+    if (item.containers && item.containers.cna && Array.isArray(item.containers.cna.references)) {
+      refs = refs.concat(item.containers.cna.references);
+    }
+    let hasExploit = false;
+    let hasPatch = false;
+    for (const ref of refs) {
+      const tags = ref.tags || [];
+      const url = (ref.url || '').toLowerCase();
+      for (const tag of tags) {
+        const t = String(tag).toLowerCase();
+        if (t === 'exploit' || t.includes('exploit')) hasExploit = true;
+        if (t === 'patch' || t.includes('patch')) hasPatch = true;
+      }
+      if (url.includes('exploit-db.com') || url.includes('packetstorm') || url.includes('/poc') || url.includes('proof-of-concept')) hasExploit = true;
+      if (url.includes('/patch') || url.includes('/fix') || url.includes('/advisory') || url.includes('security-update')) hasPatch = true;
+    }
+    enrichment.has_exploit = hasExploit;
+    enrichment.has_patch = hasPatch;
+  } catch (e) {}
+  return enrichment;
+}
+
+async function pollCves() {
+  try {
+    const cveSettings = settings.cve || {};
+    const fetchCount = cveSettings.fetchCount || 300;
+    const url = `${cveSettings.circlLastUrl || 'https://cve.circl.lu/api/last'}/${fetchCount}`;
+    const r = await fetch(url);
+    let data = await r.json();
+    if (!Array.isArray(data)) {
+      if (data && Array.isArray(data.value)) data = data.value;
+      else { console.error('pollCves: unexpected response'); return; }
+    }
+    let added = 0;
+    for (const it of data) {
+      const id = extractItemId(it);
+      if (!id) continue;
+      const d = extractItemDate(it, id);
+      const published = d ? d.toISOString() : null;
+      const enrichment = enrichCveItem(id, it);
+      db.upsertCve(id, it, published, extractCvssScore(it), enrichment);
+      added++;
+    }
+    const maxAge = cveSettings.maxAgeDays || 120;
+    const purged = db.purgeCves(maxAge);
+    const total = db.getCveCount();
+    console.log(`pollCves: fetched ${data.length}, upserted ${added}, purged ${purged}, total ${total}`);
+  } catch (e) {
+    console.error('pollCves error:', e && e.message);
+  }
+}
+
+// =========================================================================
+//  CVE API ROUTES
+// =========================================================================
+app.get('/api/cves', requireLogin, (req, res) => {
+  const count = Math.min(parseInt(req.query.count || '50', 10), 200);
+  const offset = parseInt(req.query.offset || '0', 10);
+  const cvssMin = req.query.cvssMin ? parseFloat(req.query.cvssMin) : null;
+  res.json(db.getCves(count, offset, cvssMin));
+});
+
+app.get('/api/cves/search', requireLogin, (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+  const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+  try {
+    res.json(db.searchCves(q, limit));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/cves/risk', requireLogin, (req, res) => {
+  const count = Math.min(parseInt(req.query.count || '15', 10), 100);
+  const offset = parseInt(req.query.offset || '0', 10);
+  const maxAge = Math.min(parseInt(req.query.maxAge || '90', 10), 365);
+  const rawVendor = req.query.vendor;
+  let vendor = null;
+  if (rawVendor) {
+    const arr = Array.isArray(rawVendor) ? rawVendor : [rawVendor];
+    const filtered = arr.filter(v => v && v !== 'all');
+    if (filtered.length) vendor = filtered;
+  }
+  res.json(db.getHighRiskCves(count, offset, maxAge, vendor));
+});
+
+app.get('/api/cves/vendors', requireLogin, (req, res) => {
+  const maxAge = Math.min(parseInt(req.query.maxAge || '90', 10), 365);
+  res.json(db.getCveVendorStats(maxAge));
+});
+
+app.get('/api/cves/count', requireLogin, (req, res) => {
+  res.json({ count: db.getCveCount() });
+});
+
+app.get('/api/cve/:id', requireLogin, async (req, res) => {
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: 'missing id' });
+  try {
+    const cveSettings = settings.cve || {};
+    const baseUrl = cveSettings.circlCveUrl || 'https://cve.circl.lu/api/cve';
+    const r = await fetch(`${baseUrl}/${encodeURIComponent(id)}`);
+    if (!r.ok) return res.status(r.status).json({ error: 'fetch failed' });
+    const data = await r.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// =========================================================================
 //  STATIC FILES (serve after API routes, require login for HTML)
 // =========================================================================
 // Login page is always accessible
@@ -532,6 +829,13 @@ async function bootstrap() {
   setInterval(() => {
     db.purgeHistory(settings.historyRetentionDays || 90);
   }, 24 * 60 * 60 * 1000);
+
+  // Initial CVE poll + scheduled interval
+  const cveSettings = settings.cve || {};
+  const cveInterval = (cveSettings.pollIntervalMinutes || 10) * 60 * 1000;
+  console.log('Polling CVEs...');
+  pollCves();
+  setInterval(pollCves, cveInterval);
 
   const PORT = settings.server?.port || 3000;
   app.listen(PORT, () => {

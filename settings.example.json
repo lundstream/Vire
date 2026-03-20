@@ -9,5 +9,12 @@
   },
   "defaultAdminPassword": "ChangeMe123!",
   "historyRetentionDays": 90,
-  "footerText": "Vire"
+  "footerText": "Vire",
+  "cve": {
+    "circlLastUrl": "https://cve.circl.lu/api/last",
+    "circlCveUrl": "https://cve.circl.lu/api/cve",
+    "pollIntervalMinutes": 10,
+    "fetchCount": 300,
+    "maxAgeDays": 120
+  }
 }

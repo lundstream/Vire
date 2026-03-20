@@ -656,6 +656,7 @@
       <button class="tab-btn" data-tab="domains">Domains</button>
       <button class="tab-btn" data-tab="servers">Servers</button>
       <button class="tab-btn" data-tab="maintenance">Maintenance</button>
+      <button class="tab-btn" data-tab="security">Security</button>
       <button class="tab-btn" data-tab="logbook">Logbook</button>
     </div>
 
@@ -740,6 +741,41 @@
         </div>
         <div id="maintenanceContent" style="padding:16px;">
           <div class="empty-state"><p>Loading maintenance data...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security Tab -->
+    <div class="tab-panel" id="tab-security">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Security — CVE Intelligence</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" class="search-input" id="cveSearch" placeholder="Search CVEs (e.g. CVE-2024-1234 or microsoft)...">
+            <select class="search-input" id="cveSeverityFilter" style="width:150px;">
+              <option value="">All Severities</option>
+              <option value="9">Critical (≥9.0)</option>
+              <option value="7">High (≥7.0)</option>
+              <option value="4">Medium (≥4.0)</option>
+            </select>
+            <button class="action-btn" id="cveViewToggle" title="Toggle Risk View">⚠ Risk</button>
+          </div>
+        </div>
+
+        <!-- Summary bar -->
+        <div id="cveSummaryBar" style="display:flex;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;"></div>
+
+        <!-- Vendor stats row -->
+        <div id="cveVendorBar" style="display:flex;gap:8px;padding:8px 16px;flex-wrap:wrap;"></div>
+
+        <!-- CVE list -->
+        <div id="cveContent" style="padding:16px;">
+          <div class="empty-state"><p>Loading CVE data...</p></div>
+        </div>
+
+        <!-- Load more -->
+        <div style="text-align:center;padding:12px;">
+          <button class="action-btn" id="cveLoadMore" style="display:none;">Load More</button>
         </div>
       </div>
     </div>

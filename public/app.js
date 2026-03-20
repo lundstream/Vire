@@ -111,6 +111,7 @@
         if (btn.dataset.tab === 'domains') loadDomainsView();
         if (btn.dataset.tab === 'logbook') loadGlobalLogbook();
         if (btn.dataset.tab === 'maintenance') loadMaintenanceView();
+        if (btn.dataset.tab === 'security') loadSecurityView();
       });
     });
 
@@ -2049,6 +2050,186 @@
     const days = Math.floor(hours / 24);
     if (days < 30) return days + 'd ago';
     return d.toLocaleDateString();
+  }
+
+  // =========================================================================
+  //  SECURITY / CVE TAB
+  // =========================================================================
+  let cveOffset = 0;
+  let cveRiskMode = false;
+  let cveLoaded = false;
+
+  async function loadSecurityView() {
+    if (!cveLoaded) {
+      cveOffset = 0;
+      cveRiskMode = false;
+      setupCveEvents();
+      cveLoaded = true;
+    }
+    await refreshCveView();
+  }
+
+  function setupCveEvents() {
+    const searchInput = document.getElementById('cveSearch');
+    let searchTimer = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { cveOffset = 0; refreshCveView(); }, 400);
+      });
+    }
+    const sevFilter = document.getElementById('cveSeverityFilter');
+    if (sevFilter) sevFilter.addEventListener('change', () => { cveOffset = 0; refreshCveView(); });
+
+    const toggleBtn = document.getElementById('cveViewToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        cveRiskMode = !cveRiskMode;
+        toggleBtn.textContent = cveRiskMode ? '📋 Latest' : '⚠ Risk';
+        cveOffset = 0;
+        refreshCveView();
+      });
+    }
+
+    const loadMore = document.getElementById('cveLoadMore');
+    if (loadMore) {
+      loadMore.addEventListener('click', () => {
+        cveOffset += 50;
+        refreshCveView(true);
+      });
+    }
+  }
+
+  async function refreshCveView(append) {
+    const content = document.getElementById('cveContent');
+    const loadMore = document.getElementById('cveLoadMore');
+    const searchQ = (document.getElementById('cveSearch')?.value || '').trim();
+    const cvssMin = document.getElementById('cveSeverityFilter')?.value || '';
+
+    if (!append) {
+      content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+    }
+
+    try {
+      let cves;
+      if (searchQ) {
+        const r = await fetch('/api/cves/search?q=' + encodeURIComponent(searchQ) + '&limit=100');
+        cves = await r.json();
+        loadMore.style.display = 'none';
+      } else if (cveRiskMode) {
+        const r = await fetch('/api/cves/risk?count=50&offset=' + cveOffset + '&maxAge=90');
+        cves = await r.json();
+        loadMore.style.display = cves.length >= 50 ? '' : 'none';
+      } else {
+        const url = '/api/cves?count=50&offset=' + cveOffset + (cvssMin ? '&cvssMin=' + cvssMin : '');
+        const r = await fetch(url);
+        cves = await r.json();
+        loadMore.style.display = cves.length >= 50 ? '' : 'none';
+      }
+
+      if (!append) content.innerHTML = '';
+      if (cves.length === 0 && !append) {
+        content.innerHTML = '<div class="empty-state"><p>No CVEs found.</p></div>';
+      } else {
+        const frag = document.createDocumentFragment();
+        for (const cve of cves) {
+          frag.appendChild(buildCveCard(cve));
+        }
+        content.appendChild(frag);
+      }
+
+      // Update summary & vendor bars (only on first load / non-append)
+      if (!append) {
+        loadCveSummary();
+        loadCveVendors();
+      }
+    } catch (e) {
+      if (!append) content.innerHTML = '<div class="empty-state"><p>Error loading CVE data.</p></div>';
+    }
+  }
+
+  function cvssColor(score) {
+    if (score == null || isNaN(score)) return '';
+    if (score >= 9) return '#e74c3c';
+    if (score >= 7) return '#e67e22';
+    if (score >= 4) return '#f1c40f';
+    return '#27ae60';
+  }
+
+  function riskScoreColor(score) {
+    if (score >= 200) return '#ff2244';
+    if (score >= 150) return '#ff6622';
+    if (score >= 100) return '#ffaa00';
+    return '#44bb44';
+  }
+
+  function buildCveCard(cve) {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border);';
+
+    const cvss = cve.cvss != null ? parseFloat(cve.cvss) : null;
+    const cvssHtml = cvss != null
+      ? `<span style="color:${cvssColor(cvss)};font-weight:700">CVSS ${cvss.toFixed(1)}</span>`
+      : '<span style="opacity:0.5">No CVSS</span>';
+
+    const pubDate = cve.published ? timeAgo(cve.published) : '';
+
+    let badges = '';
+    if (cve._vendor) badges += `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(160,100,255,0.15);color:#b07aff;font-weight:600;margin-right:4px;">${esc(cve._vendor)}</span>`;
+    if (cve._kev) badges += '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(231,76,60,0.2);color:#e74c3c;font-weight:700;margin-right:4px;">KEV</span>';
+    if (cve._exploit) badges += '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(231,76,60,0.15);color:#e74c3c;font-weight:600;margin-right:4px;">Exploit</span>';
+    if (cve._patch) badges += '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600;margin-right:4px;">Patch</span>';
+    else badges += '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(231,76,60,0.1);color:#e67e22;font-weight:600;margin-right:4px;">No patch</span>';
+    if (cve._epss != null) badges += `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(0,180,255,0.18);color:#44bbff;font-weight:600;margin-right:4px;">EPSS ${(cve._epss * 100).toFixed(1)}%</span>`;
+    if (cve._riskScore != null) badges += `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:${riskScoreColor(cve._riskScore)};color:#fff;font-weight:700;margin-right:4px;">Risk ${cve._riskScore}</span>`;
+
+    const title = esc(cve.title || cve.summary?.slice(0, 120) || '');
+    const summary = cve.summary ? esc(cve.summary.length > 300 ? cve.summary.slice(0, 300) + '…' : cve.summary) : '';
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong><a href="https://cve.circl.lu/cve/${encodeURIComponent(cve.id)}" target="_blank" rel="noopener" style="color:var(--accent);">${esc(cve.id)}</a></strong>
+        <span style="font-size:13px;opacity:0.7">${pubDate}</span>
+      </div>
+      ${title ? `<div style="margin-bottom:4px;font-weight:500;">${title}</div>` : ''}
+      <div style="margin-bottom:6px;">${cvssHtml}</div>
+      <div style="margin-bottom:6px;">${badges}</div>
+      ${summary ? `<div style="font-size:13px;opacity:0.8;line-height:1.4;">${summary}</div>` : ''}
+    `;
+    return card;
+  }
+
+  async function loadCveSummary() {
+    const bar = document.getElementById('cveSummaryBar');
+    if (!bar) return;
+    try {
+      const r = await fetch('/api/cves/count');
+      const data = await r.json();
+      bar.innerHTML = `
+        <div style="font-weight:600;">Total CVEs: <span style="color:var(--accent);">${data.count || 0}</span></div>
+      `;
+    } catch (e) {
+      bar.innerHTML = '';
+    }
+  }
+
+  async function loadCveVendors() {
+    const bar = document.getElementById('cveVendorBar');
+    if (!bar) return;
+    try {
+      const r = await fetch('/api/cves/vendors?maxAge=30');
+      const vendors = await r.json();
+      if (!vendors.length) { bar.innerHTML = ''; return; }
+      bar.innerHTML = vendors.slice(0, 10).map(v => {
+        const crit = v.critical > 0 ? `<span style="color:#e74c3c;font-weight:700">${v.critical}C</span>` : '';
+        const high = v.high > 0 ? `<span style="color:#e67e22;font-weight:600">${v.high}H</span>` : '';
+        return `<span style="display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;">
+          <strong>${esc(v.vendor)}</strong> ${v.total} ${crit} ${high}
+        </span>`;
+      }).join('');
+    } catch (e) {
+      bar.innerHTML = '';
+    }
   }
 
 })();
