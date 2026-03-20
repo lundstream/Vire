@@ -1368,6 +1368,162 @@ function purgeCves(maxAgeDays) {
   return info.changes + nullInfo.changes;
 }
 
+// =========================================================================
+//  SECURITY POSTURE — server-CVE cross-reference
+// =========================================================================
+function getSecurityPosture(allowedDomains) {
+  const d = getDb();
+  let domainFilter = '';
+  const params = [];
+  if (allowedDomains && allowedDomains.length > 0) {
+    domainFilter = `WHERE s.domain_or_workgroup IN (${allowedDomains.map(() => '?').join(',')})`;
+    params.push(...allowedDomains);
+  }
+
+  const servers = d.prepare(`
+    SELECT s.id, s.hostname, s.domain_or_workgroup as domain, s.os_edition, s.os_build,
+      s.last_patch_date, s.missing_critical_updates, s.reboot_pending,
+      s.antivirus_product, s.antivirus_status, s.last_heartbeat, s.last_security_scan,
+      s.rdp_enabled, s.nla_enabled, s.bitlocker_status, s.critical_events_24h,
+      s.maintenance_mode
+    FROM servers s ${domainFilter}
+    ORDER BY s.missing_critical_updates DESC, s.hostname ASC
+  `).all(...params);
+
+  const updateStmt = d.prepare('SELECT kb_id, title, severity FROM server_missing_updates WHERE server_id = ?');
+  const rolesStmt = d.prepare('SELECT name, type FROM server_roles WHERE server_id = ?');
+  const servicesStmt = d.prepare('SELECT name, display_name, status FROM server_services WHERE server_id = ?');
+
+  const result = servers.map(s => {
+    const updates = updateStmt.all(s.id);
+    const roles = rolesStmt.all(s.id);
+    const services = servicesStmt.all(s.id);
+
+    const products = new Set();
+    if (s.os_edition) {
+      const osLower = s.os_edition.toLowerCase();
+      if (osLower.includes('windows')) products.add('microsoft');
+      if (osLower.includes('server 2022')) products.add('windows_server_2022');
+      if (osLower.includes('server 2019')) products.add('windows_server_2019');
+      if (osLower.includes('server 2016')) products.add('windows_server_2016');
+      if (osLower.includes('windows 11')) products.add('windows_11');
+      if (osLower.includes('windows 10')) products.add('windows_10');
+    }
+    for (const r of roles) {
+      const rn = (r.name || '').toLowerCase();
+      if (rn.includes('iis') || rn.includes('web-server') || rn.includes('web server')) products.add('iis');
+      if (rn.includes('sql') || rn.includes('mssql')) products.add('sql_server');
+      if (rn.includes('ad-domain') || rn.includes('active directory')) products.add('active_directory');
+      if (rn.includes('dns')) products.add('dns');
+      if (rn.includes('dhcp')) products.add('dhcp');
+      if (rn.includes('hyper-v')) products.add('hyper-v');
+      if (rn.includes('.net')) products.add('.net');
+      if (rn.includes('wsus')) products.add('wsus');
+      if (rn.includes('exchange')) products.add('exchange');
+    }
+    for (const svc of services) {
+      const sn = (svc.name || '').toLowerCase();
+      if (sn.includes('mssql') || sn.includes('sqlserver')) products.add('sql_server');
+      if (sn.includes('w3svc') || sn.includes('was')) products.add('iis');
+      if (sn.includes('ntds')) products.add('active_directory');
+      if (sn.includes('exchange')) products.add('exchange');
+    }
+
+    return {
+      id: s.id,
+      hostname: s.hostname,
+      domain: s.domain,
+      os_edition: s.os_edition,
+      os_build: s.os_build,
+      last_patch_date: s.last_patch_date,
+      missing_critical_updates: s.missing_critical_updates || 0,
+      reboot_pending: s.reboot_pending || 0,
+      antivirus_product: s.antivirus_product,
+      antivirus_status: s.antivirus_status,
+      last_heartbeat: s.last_heartbeat,
+      last_security_scan: s.last_security_scan,
+      rdp_enabled: s.rdp_enabled,
+      nla_enabled: s.nla_enabled,
+      bitlocker_status: s.bitlocker_status,
+      critical_events_24h: s.critical_events_24h || 0,
+      maintenance_mode: s.maintenance_mode,
+      missing_updates: updates,
+      products: Array.from(products),
+      roles: roles.map(r => r.name),
+    };
+  });
+
+  return result;
+}
+
+function getMatchingCves(products, limit) {
+  const d = getDb();
+  if (!products || products.length === 0) return [];
+  const conditions = [];
+  const params = [];
+  for (const p of products) {
+    const keywords = productToKeywords(p);
+    for (const kw of keywords) {
+      conditions.push('(lower(vendor) LIKE ? OR lower(data) LIKE ?)');
+      const like = '%' + kw.toLowerCase() + '%';
+      params.push(like, like);
+    }
+  }
+  if (conditions.length === 0) return [];
+  const where = conditions.join(' OR ');
+  const sql = `SELECT id, data, published, cvss_score, kev, has_exploit, has_patch, vendor, discovered, epss_score
+    FROM cves WHERE (${where}) AND cvss_score IS NOT NULL
+    ORDER BY cvss_score DESC, published DESC LIMIT ?`;
+  params.push(limit || 20);
+  return d.prepare(sql).all(...params).map(slimCve);
+}
+
+function productToKeywords(product) {
+  const map = {
+    'microsoft': ['microsoft'],
+    'windows_server_2022': ['windows server 2022', 'windows_server_2022'],
+    'windows_server_2019': ['windows server 2019', 'windows_server_2019'],
+    'windows_server_2016': ['windows server 2016', 'windows_server_2016'],
+    'windows_11': ['windows 11', 'windows_11'],
+    'windows_10': ['windows 10', 'windows_10'],
+    'iis': ['iis', 'internet information services'],
+    'sql_server': ['sql server', 'mssql', 'sql_server'],
+    'active_directory': ['active directory', 'ad ds', 'ldap', 'kerberos'],
+    'dns': ['dns server', 'windows dns'],
+    'dhcp': ['dhcp server', 'windows dhcp'],
+    'hyper-v': ['hyper-v', 'hypervisor'],
+    '.net': ['.net framework', '.net core', 'dotnet'],
+    'wsus': ['wsus', 'windows server update'],
+    'exchange': ['exchange server', 'microsoft exchange'],
+  };
+  return map[product] || [product];
+}
+
+function getSecuritySummary(allowedDomains) {
+  const d = getDb();
+  let domainFilter = '';
+  const params = [];
+  if (allowedDomains && allowedDomains.length > 0) {
+    domainFilter = `WHERE domain_or_workgroup IN (${allowedDomains.map(() => '?').join(',')})`;
+    params.push(...allowedDomains);
+  }
+  const row = d.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN missing_critical_updates > 0 THEN 1 ELSE 0 END) as servers_missing_patches,
+      SUM(COALESCE(missing_critical_updates, 0)) as total_missing_patches,
+      SUM(CASE WHEN reboot_pending = 1 THEN 1 ELSE 0 END) as reboot_pending,
+      SUM(CASE WHEN antivirus_status != 'OK' AND antivirus_status IS NOT NULL THEN 1 ELSE 0 END) as av_issues,
+      SUM(CASE WHEN rdp_enabled = 1 AND nla_enabled = 0 THEN 1 ELSE 0 END) as rdp_no_nla,
+      SUM(CASE WHEN critical_events_24h > 0 THEN 1 ELSE 0 END) as critical_events
+    FROM servers ${domainFilter}
+  `).get(...params);
+  const cveCount = d.prepare('SELECT COUNT(*) as c FROM cves').get().c;
+  const highCves = d.prepare('SELECT COUNT(*) as c FROM cves WHERE cvss_score >= 7').get().c;
+  const critCves = d.prepare('SELECT COUNT(*) as c FROM cves WHERE cvss_score >= 9').get().c;
+  return { ...row, cve_total: cveCount, cve_high: highCves, cve_critical: critCves };
+}
+
 module.exports = {
   getDb, initSchema,
   createUser, getUserByUsername, updateLastLogin, getUsers, deleteUser, updateUserPassword,
@@ -1385,4 +1541,5 @@ module.exports = {
   getUserAllowedDomains,
   processHeartbeat,
   upsertCve, getCves, searchCves, getCveCount, getHighRiskCves, getCveVendorStats, purgeCves,
+  getSecurityPosture, getMatchingCves, getSecuritySummary,
 };

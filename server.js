@@ -701,6 +701,27 @@ async function pollCves() {
 }
 
 // =========================================================================
+//  SECURITY POSTURE API ROUTES
+// =========================================================================
+app.get('/api/security/summary', requireLogin, (req, res) => {
+  const allowedDomains = req.session.user.role === 'admin' ? null : db.getUserAllowedDomains(req.session.user.id);
+  res.json(db.getSecuritySummary(allowedDomains));
+});
+
+app.get('/api/security/posture', requireLogin, (req, res) => {
+  const allowedDomains = req.session.user.role === 'admin' ? null : db.getUserAllowedDomains(req.session.user.id);
+  res.json(db.getSecurityPosture(allowedDomains));
+});
+
+app.get('/api/security/server-cves', requireLogin, (req, res) => {
+  const products = req.query.products;
+  if (!products) return res.json([]);
+  const list = Array.isArray(products) ? products : products.split(',');
+  const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+  res.json(db.getMatchingCves(list, limit));
+});
+
+// =========================================================================
 //  CVE API ROUTES
 // =========================================================================
 app.get('/api/cves', requireLogin, (req, res) => {

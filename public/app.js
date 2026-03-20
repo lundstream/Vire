@@ -112,6 +112,7 @@
         if (btn.dataset.tab === 'logbook') loadGlobalLogbook();
         if (btn.dataset.tab === 'maintenance') loadMaintenanceView();
         if (btn.dataset.tab === 'security') loadSecurityView();
+        if (btn.dataset.tab === 'cves') loadCvesView();
       });
     });
 
@@ -2053,13 +2054,253 @@
   }
 
   // =========================================================================
-  //  SECURITY / CVE TAB
+  //  SECURITY POSTURE TAB
+  // =========================================================================
+  let secLoaded = false;
+  let secPostureData = [];
+
+  async function loadSecurityView() {
+    if (!secLoaded) {
+      setupSecurityEvents();
+      secLoaded = true;
+    }
+    await refreshSecurityView();
+  }
+
+  function setupSecurityEvents() {
+    const searchInput = document.getElementById('secSearch');
+    let searchTimer = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => renderSecurityList(), 300);
+      });
+    }
+    const domFilter = document.getElementById('secDomainFilter');
+    if (domFilter) domFilter.addEventListener('change', () => renderSecurityList());
+    const statusFilter = document.getElementById('secStatusFilter');
+    if (statusFilter) statusFilter.addEventListener('change', () => renderSecurityList());
+  }
+
+  async function refreshSecurityView() {
+    const content = document.getElementById('secContent');
+    content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+
+    try {
+      const [postureRes, summaryRes] = await Promise.all([
+        fetch('/api/security/posture'),
+        fetch('/api/security/summary')
+      ]);
+      secPostureData = await postureRes.json();
+      const summary = await summaryRes.json();
+
+      // Populate domain filter
+      const domFilter = document.getElementById('secDomainFilter');
+      if (domFilter && domFilter.options.length <= 1) {
+        const domains = [...new Set(secPostureData.map(s => s.domain).filter(Boolean))].sort();
+        for (const d of domains) {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          domFilter.appendChild(opt);
+        }
+      }
+
+      renderSecuritySummary(summary);
+      renderSecurityList();
+    } catch (e) {
+      content.innerHTML = '<div class="empty-state"><p>Error loading security data.</p></div>';
+    }
+  }
+
+  function renderSecuritySummary(s) {
+    const bar = document.getElementById('secSummaryBar');
+    if (!bar) return;
+    const card = (label, value, color) => `<div style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;min-width:120px;text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:${color}">${value}</div>
+      <div style="font-size:12px;opacity:0.7;">${label}</div>
+    </div>`;
+    bar.innerHTML = [
+      card('Total Servers', s.total || 0, 'var(--accent)'),
+      card('Missing Patches', s.servers_missing_patches || 0, (s.servers_missing_patches > 0 ? '#e74c3c' : '#27ae60')),
+      card('Total Missing', s.total_missing_patches || 0, (s.total_missing_patches > 0 ? '#e67e22' : '#27ae60')),
+      card('Reboot Pending', s.reboot_pending || 0, (s.reboot_pending > 0 ? '#e67e22' : '#27ae60')),
+      card('AV Issues', s.av_issues || 0, (s.av_issues > 0 ? '#e74c3c' : '#27ae60')),
+      card('RDP no NLA', s.rdp_no_nla || 0, (s.rdp_no_nla > 0 ? '#e67e22' : '#27ae60')),
+      card('Critical Events', s.critical_events || 0, (s.critical_events > 0 ? '#e74c3c' : '#27ae60')),
+      card('CVEs Tracked', s.cve_total || 0, 'var(--accent)'),
+      card('High/Crit CVEs', (s.cve_high || 0), (s.cve_high > 0 ? '#e67e22' : '#27ae60')),
+    ].join('');
+  }
+
+  function renderSecurityList() {
+    const content = document.getElementById('secContent');
+    const searchQ = (document.getElementById('secSearch')?.value || '').toLowerCase();
+    const domainF = document.getElementById('secDomainFilter')?.value || '';
+    const statusF = document.getElementById('secStatusFilter')?.value || '';
+
+    let filtered = secPostureData;
+    if (searchQ) filtered = filtered.filter(s => s.hostname.toLowerCase().includes(searchQ) || (s.os_edition || '').toLowerCase().includes(searchQ));
+    if (domainF) filtered = filtered.filter(s => s.domain === domainF);
+    if (statusF === 'missing') filtered = filtered.filter(s => s.missing_critical_updates > 0);
+    else if (statusF === 'reboot') filtered = filtered.filter(s => s.reboot_pending);
+    else if (statusF === 'av') filtered = filtered.filter(s => s.antivirus_status && s.antivirus_status !== 'OK');
+    else if (statusF === 'rdp') filtered = filtered.filter(s => s.rdp_enabled && !s.nla_enabled);
+
+    if (filtered.length === 0) {
+      content.innerHTML = '<div class="empty-state"><p>No servers match the current filter.</p></div>';
+      return;
+    }
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="border-bottom:2px solid var(--border);text-align:left;">' +
+      '<th style="padding:10px 12px;">Server</th>' +
+      '<th style="padding:10px 8px;">OS</th>' +
+      '<th style="padding:10px 8px;">Last Patched</th>' +
+      '<th style="padding:10px 8px;">Missing</th>' +
+      '<th style="padding:10px 8px;">Reboot</th>' +
+      '<th style="padding:10px 8px;">AV</th>' +
+      '<th style="padding:10px 8px;">RDP</th>' +
+      '<th style="padding:10px 8px;">Events</th>' +
+      '<th style="padding:10px 8px;">Products</th>' +
+      '</tr></thead><tbody>';
+
+    for (const s of filtered) {
+      const patchAge = patchAgeDays(s.last_patch_date);
+      const patchColor = patchAge > 60 ? '#e74c3c' : patchAge > 30 ? '#e67e22' : '#27ae60';
+      const patchText = s.last_patch_date ? timeAgo(s.last_patch_date) : '<span style="color:#e74c3c">Never</span>';
+
+      const missingBadge = s.missing_critical_updates > 0
+        ? `<span style="background:#e74c3c;color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:12px;">${s.missing_critical_updates}</span>`
+        : '<span style="color:#27ae60;font-size:12px;">0</span>';
+
+      const rebootBadge = s.reboot_pending
+        ? '<span style="background:#e67e22;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">Yes</span>'
+        : '<span style="color:#27ae60;font-size:12px;">No</span>';
+
+      const avBadge = s.antivirus_status === 'OK'
+        ? '<span style="color:#27ae60;font-size:12px;">OK</span>'
+        : `<span style="background:#e74c3c;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">${esc(s.antivirus_status || 'Unknown')}</span>`;
+
+      let rdpBadge = '';
+      if (s.rdp_enabled) {
+        rdpBadge = s.nla_enabled
+          ? '<span style="color:#e67e22;font-size:12px;">On+NLA</span>'
+          : '<span style="background:#e74c3c;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">On (no NLA)</span>';
+      } else {
+        rdpBadge = '<span style="color:#27ae60;font-size:12px;">Off</span>';
+      }
+
+      const eventsBadge = s.critical_events_24h > 0
+        ? `<span style="background:#e74c3c;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">${s.critical_events_24h}</span>`
+        : '<span style="color:#27ae60;font-size:12px;">0</span>';
+
+      const prodTags = s.products.slice(0, 4).map(p =>
+        `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;background:rgba(160,100,255,0.12);color:#b07aff;margin:1px;">${esc(p)}</span>`
+      ).join('');
+
+      html += `<tr style="border-bottom:1px solid var(--border);cursor:pointer;" data-server-id="${s.id}" data-products="${esc(s.products.join(','))}">
+        <td style="padding:8px 12px;"><strong>${esc(s.hostname)}</strong><br><span style="font-size:11px;opacity:0.6;">${esc(s.domain || '')}</span></td>
+        <td style="padding:8px;">${esc(s.os_edition || '')}<br><span style="font-size:11px;opacity:0.6;">${esc(s.os_build || '')}</span></td>
+        <td style="padding:8px;color:${patchColor}">${patchText}</td>
+        <td style="padding:8px;">${missingBadge}</td>
+        <td style="padding:8px;">${rebootBadge}</td>
+        <td style="padding:8px;">${avBadge}</td>
+        <td style="padding:8px;">${rdpBadge}</td>
+        <td style="padding:8px;">${eventsBadge}</td>
+        <td style="padding:8px;">${prodTags}</td>
+      </tr>`;
+
+      // Missing updates sub-row (expanded inline)
+      if (s.missing_updates && s.missing_updates.length > 0) {
+        html += `<tr style="border-bottom:1px solid var(--border);background:var(--bg);"><td colspan="9" style="padding:4px 12px 8px 24px;">`;
+        html += '<div style="font-size:12px;opacity:0.7;margin-bottom:4px;">Missing Updates:</div>';
+        for (const u of s.missing_updates) {
+          const sevColor = u.severity === 'Critical' ? '#e74c3c' : u.severity === 'Important' ? '#e67e22' : '#888';
+          html += `<div style="font-size:12px;padding:2px 0;"><span style="color:${sevColor};font-weight:600;">${esc(u.severity || '')}</span> <span style="opacity:0.6;">${esc(u.kb_id || '')}</span> ${esc(u.title || '')}</div>`;
+        }
+        html += '</td></tr>';
+      }
+    }
+
+    html += '</tbody></table>';
+    content.innerHTML = html;
+
+    // Click handler for rows to show matching CVEs
+    content.querySelectorAll('tr[data-server-id]').forEach(row => {
+      row.addEventListener('click', async () => {
+        const products = (row.dataset.products || '').split(',').filter(Boolean);
+        const hostname = row.querySelector('strong')?.textContent || '';
+        if (products.length === 0) return;
+        await showServerCves(hostname, products);
+      });
+    });
+  }
+
+  async function showServerCves(hostname, products) {
+    const content = document.getElementById('secContent');
+    // Find existing CVE panel or create one
+    let panel = document.getElementById('secCvePanel');
+    if (panel) panel.remove();
+
+    panel = document.createElement('div');
+    panel.id = 'secCvePanel';
+    panel.style.cssText = 'border-top:2px solid var(--accent);padding:16px;background:var(--bg);';
+    panel.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner"></div> Loading matching CVEs...</div>';
+    content.parentElement.insertBefore(panel, content.nextSibling);
+
+    try {
+      const r = await fetch('/api/security/server-cves?products=' + encodeURIComponent(products.join(',')) + '&limit=30');
+      const cves = await r.json();
+
+      if (cves.length === 0) {
+        panel.innerHTML = `<div style="padding:12px;"><strong>${esc(hostname)}</strong> — <span style="opacity:0.7;">No matching CVEs found in the database for detected products.</span>
+          <button class="action-btn" style="float:right;" onclick="this.closest('#secCvePanel').remove()">Close</button></div>`;
+        return;
+      }
+
+      let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div><strong>${esc(hostname)}</strong> — <span style="opacity:0.7;">${cves.length} potentially relevant CVEs (${products.join(', ')})</span></div>
+        <button class="action-btn" onclick="this.closest('#secCvePanel').remove()">Close</button>
+      </div>`;
+
+      for (const cve of cves) {
+        const cvss = cve.cvss != null ? parseFloat(cve.cvss) : null;
+        const cvssHtml = cvss != null
+          ? `<span style="color:${cvssColor(cvss)};font-weight:700;">CVSS ${cvss.toFixed(1)}</span>`
+          : '';
+        let badges = '';
+        if (cve._vendor) badges += `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;background:rgba(160,100,255,0.15);color:#b07aff;margin-right:3px;">${esc(cve._vendor)}</span>`;
+        if (cve._exploit) badges += '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;background:rgba(231,76,60,0.15);color:#e74c3c;margin-right:3px;">Exploit</span>';
+        if (!cve._patch) badges += '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;background:rgba(231,76,60,0.1);color:#e67e22;margin-right:3px;">No patch</span>';
+
+        html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <a href="https://cve.circl.lu/cve/${encodeURIComponent(cve.id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;">${esc(cve.id)}</a>
+          ${cvssHtml} ${badges}
+          <span style="opacity:0.7;">${esc(cve.title || cve.summary?.slice(0, 100) || '')}</span>
+        </div>`;
+      }
+
+      panel.innerHTML = html;
+    } catch (e) {
+      panel.innerHTML = `<div style="padding:12px;">Error loading CVEs. <button class="action-btn" onclick="this.closest('#secCvePanel').remove()">Close</button></div>`;
+    }
+  }
+
+  function patchAgeDays(dateStr) {
+    if (!dateStr) return 999;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 999;
+    return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
+  }
+
+  // =========================================================================
+  //  CVEs TAB (general CVE intelligence)
   // =========================================================================
   let cveOffset = 0;
   let cveRiskMode = false;
   let cveLoaded = false;
 
-  async function loadSecurityView() {
+  async function loadCvesView() {
     if (!cveLoaded) {
       cveOffset = 0;
       cveRiskMode = false;

@@ -657,6 +657,7 @@
       <button class="tab-btn" data-tab="servers">Servers</button>
       <button class="tab-btn" data-tab="maintenance">Maintenance</button>
       <button class="tab-btn" data-tab="security">Security</button>
+      <button class="tab-btn" data-tab="cves">CVEs</button>
       <button class="tab-btn" data-tab="logbook">Logbook</button>
     </div>
 
@@ -749,7 +750,35 @@
     <div class="tab-panel" id="tab-security">
       <div class="panel">
         <div class="panel-header">
-          <h2>Security — CVE Intelligence</h2>
+          <h2>Security Posture</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" class="search-input" id="secSearch" placeholder="Search servers...">
+            <select class="search-input" id="secDomainFilter" style="width:180px;"><option value="">All Domains</option></select>
+            <select class="search-input" id="secStatusFilter" style="width:160px;">
+              <option value="">All Servers</option>
+              <option value="missing">Missing Patches</option>
+              <option value="reboot">Reboot Pending</option>
+              <option value="av">AV Issues</option>
+              <option value="rdp">RDP without NLA</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Summary cards -->
+        <div id="secSummaryBar" style="display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;"></div>
+
+        <!-- Server security list -->
+        <div id="secContent" style="padding:0;">
+          <div class="empty-state"><p>Loading security posture...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CVEs Tab -->
+    <div class="tab-panel" id="tab-cves">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>CVE Intelligence</h2>
           <div style="display:flex;gap:8px;align-items:center;">
             <input type="text" class="search-input" id="cveSearch" placeholder="Search CVEs (e.g. CVE-2024-1234 or microsoft)...">
             <select class="search-input" id="cveSeverityFilter" style="width:150px;">
