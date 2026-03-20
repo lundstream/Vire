@@ -336,7 +336,7 @@ function initSchema() {
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_logbook_server ON server_logbook(server_id, created_at);`); } catch(e){}
 
   // Purge legacy maintenance auto-entries from logbook
-  d.exec(`DELETE FROM server_logbook WHERE comment LIKE 'Maintenance started%' OR comment LIKE 'Maintenance ended%'`);
+  d.exec(`DELETE FROM server_logbook WHERE comment LIKE '%Maintenance started%' OR comment LIKE '%Maintenance ended%'`);
 
   // Migrations — add columns if missing
   try { d.exec(`ALTER TABLE servers ADD COLUMN nla_enabled INTEGER;`); } catch(e){}
