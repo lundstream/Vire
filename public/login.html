@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vire — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #181a20;
+      --card: #1e2028;
+      --border: #2a2d37;
+      --text: #e4e6ed;
+      --text2: #9ca3b0;
+      --accent: #4f8cff;
+      --accent2: #3d6fcc;
+      --danger: #ff4d6a;
+      --success: #3ddfa0;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-container {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px 40px;
+      width: 400px;
+      max-width: 90vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }
+    .login-container h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+    .login-container p {
+      color: var(--text2);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .form-group input:focus {
+      border-color: var(--accent);
+    }
+    .btn-login {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+      margin-top: 8px;
+    }
+    .btn-login:hover { background: var(--accent2); }
+    .error-msg {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 12px;
+      min-height: 20px;
+    }
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .logo-icon svg { width: 28px; height: 28px; stroke: #fff; fill: none; }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+        <line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
+      </svg>
+    </div>
+    <h1>Vire</h1>
+    <p>Sign in to access the dashboard</p>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-login">Sign In</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </form>
+  </div>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('errorMsg');
+      errEl.textContent = '';
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      if (!username || !password) { errEl.textContent = 'Please enter credentials'; return; }
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await r.json();
+        if (r.ok && data.ok) {
+          window.location.href = '/';
+        } else {
+          errEl.textContent = data.error || 'Login failed';
+        }
+      } catch (err) {
+        errEl.textContent = 'Connection error';
+      }
+    });
+    // If already logged in, redirect
+    fetch('/api/auth/me').then(r => r.json()).then(d => {
+      if (d.authenticated) window.location.href = '/';
+    }).catch(() => {});
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  inventory-web:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - inventory-data:/app/data
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  inventory-data:

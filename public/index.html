@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vire</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f8cff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='2' width='20' height='8' rx='2' ry='2'/%3E%3Crect x='2' y='14' width='20' height='8' rx='2' ry='2'/%3E%3Cline x1='6' y1='6' x2='6.01' y2='6'/%3E%3Cline x1='6' y1='18' x2='6.01' y2='18'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #181a20;
+      --card: #1e2028;
+      --card2: #252830;
+      --border: #2a2d37;
+      --border2: #353840;
+      --text: #e4e6ed;
+      --text2: #9ca3b0;
+      --text3: #6b7280;
+      --accent: #4f8cff;
+      --accent2: #3d6fcc;
+      --accent-bg: rgba(79,140,255,.1);
+      --success: #3ddfa0;
+      --success-bg: rgba(61,223,160,.1);
+      --warning: #f5a623;
+      --warning-bg: rgba(245,166,35,.1);
+      --danger: #ff4d6a;
+      --danger-bg: rgba(255,77,106,.1);
+      --info: #6ec1e4;
+      --info-bg: rgba(110,193,228,.1);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 2px 12px rgba(0,0,0,.3);
+    }
+    [data-theme="light"] {
+      --bg: #f0f2f5;
+      --bg2: #e8eaed;
+      --card: #ffffff;
+      --card2: #f8f9fa;
+      --border: #d1d5db;
+      --border2: #e5e7eb;
+      --text: #1f2937;
+      --text2: #6b7280;
+      --text3: #9ca3af;
+      --accent-bg: rgba(79,140,255,.08);
+      --success-bg: rgba(61,223,160,.08);
+      --warning-bg: rgba(245,166,35,.08);
+      --danger-bg: rgba(255,77,106,.08);
+      --info-bg: rgba(110,193,228,.08);
+      --shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* --- Layout --- */
+    .topbar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .topbar-logo {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .topbar-logo svg { width: 20px; height: 20px; stroke: #fff; fill: none; }
+    .topbar-title { font-size: 18px; font-weight: 700; }
+    .topbar-right { display: flex; align-items: center; gap: 16px; }
+    .topbar-right .user-badge {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 14px;
+      font-size: 13px;
+      color: var(--text2);
+      cursor: pointer;
+      transition: .2s;
+    }
+    .topbar-right .user-badge:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn-icon {
+      background: none; border: none; color: var(--text2);
+      cursor: pointer; padding: 6px; border-radius: 6px; transition: .2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-icon:hover { background: var(--card2); color: var(--text); }
+    .btn-icon svg { width: 18px; height: 18px; }
+
+    .btn-delete-server {
+      background: none; border: none; color: var(--text3); cursor: pointer;
+      font-size: 15px; padding: 4px 8px; border-radius: 4px; transition: .2s;
+    }
+    .btn-delete-server:hover { background: var(--danger); color: #fff; }
+
+    /* Logbook */
+    .logbook-entry {
+      background: var(--card2); border-radius: var(--radius-sm);
+      padding: 12px 16px; margin-bottom: 8px;
+    }
+    .logbook-meta {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 6px; font-size: 12px; color: var(--text3);
+    }
+    .logbook-author { font-weight: 600; color: var(--accent); }
+    .logbook-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .logbook-delete {
+      margin-left: auto; background: none; border: none; color: var(--text3);
+      cursor: pointer; font-size: 16px; padding: 0 4px; border-radius: 4px; transition: .2s;
+    }
+    .logbook-delete:hover { color: var(--danger); }
+
+    /* --- Maintenance Mode --- */
+    .maintenance-banner {
+      background: linear-gradient(135deg, #f59e0b22, #f59e0b11);
+      border: 1px solid #f59e0b55;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .maintenance-banner .maint-icon { font-size: 20px; }
+    .maintenance-banner .maint-info { flex: 1; }
+    .maintenance-banner .maint-title { font-weight: 600; color: var(--warning); font-size: 14px; }
+    .maintenance-banner .maint-detail { font-size: 12px; color: var(--text3); margin-top: 2px; }
+    .badge-maintenance {
+      background: #f59e0b22;
+      color: #f59e0b;
+      border: 1px solid #f59e0b44;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .maint-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .maint-form select, .maint-form input {
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .main-content { padding: 24px; max-width: 1440px; margin: 0 auto; }
+
+    /* --- Tabs --- */
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      border: none;
+      background: transparent;
+      color: var(--text2);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      transition: .2s;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--card2); }
+    .tab-btn.active { background: var(--accent); color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* --- Cards / Stat Boxes --- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stat-card .stat-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .stat-card .stat-sub {
+      font-size: 12px;
+      color: var(--text3);
+    }
+    .stat-card.accent { border-left: 3px solid var(--accent); }
+    .stat-card.success { border-left: 3px solid var(--success); }
+    .stat-card.warning { border-left: 3px solid var(--warning); }
+    .stat-card.danger { border-left: 3px solid var(--danger); }
+
+    /* --- Server Table --- */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .panel-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .search-input {
+      padding: 8px 14px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      width: 260px;
+      transition: border-color .2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-table th, .data-table td {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table th {
+      font-weight: 600;
+      color: var(--text2);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      background: var(--card2);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .data-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+      transition: color .2s;
+    }
+    .data-table th.sortable:hover { color: var(--accent); }
+    .data-table th.sortable .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.3; }
+    .data-table th.sortable.sort-asc .sort-arrow::after { content: '▲'; opacity: 1; }
+    .data-table th.sortable.sort-desc .sort-arrow::after { content: '▼'; opacity: 1; }
+    .data-table tbody tr {
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .data-table tbody tr:hover { background: var(--accent-bg); }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .table-scroll {
+      overflow-x: auto;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    /* --- Badges --- */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-green { background: var(--success-bg); color: var(--success); }
+    .badge-red { background: var(--danger-bg); color: var(--danger); }
+    .badge-yellow { background: var(--warning-bg); color: var(--warning); }
+    .badge-blue { background: var(--accent-bg); color: var(--accent); }
+    .badge-gray { background: var(--card2); color: var(--text2); }
+
+    /* --- Charts --- */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .chart-card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text2);
+    }
+    .chart-canvas-wrap { position: relative; width: 100%; height: 250px; }
+    .chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+    /* --- Server Detail Modal --- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 200;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 1100px;
+      max-width: 100%;
+      box-shadow: 0 16px 64px rgba(0,0,0,.5);
+    }
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-header h2 { font-size: 18px; font-weight: 700; }
+    .modal-body { padding: 24px; }
+    .modal-close {
+      background: none; border: none; color: var(--text2);
+      cursor: pointer; font-size: 24px; padding: 4px 8px;
+      border-radius: 6px; transition: .2s;
+    }
+    .modal-close:hover { background: var(--card2); color: var(--text); }
+
+    /* Detail grid inside modal */
+    /* Collapsible detail-grid header */
+    .detail-section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      cursor: pointer;
+      user-select: none;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      background: var(--card2);
+      transition: background .2s;
+    }
+    .detail-section-header:hover { background: var(--border); }
+    .detail-section-header .toggle-icon {
+      display: inline-block;
+      transition: transform .2s;
+      font-size: 11px;
+    }
+    .detail-section-header.collapsed .toggle-icon { transform: rotate(-90deg); }
+    .detail-section-header.collapsed + .detail-grid,
+    .detail-grid.collapsed {
+      display: none;
+    }
+    .detail-section-header.collapsed {
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      background: var(--border);
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .detail-item {
+      background: var(--card);
+      padding: 12px 16px;
+    }
+    .detail-item .dl { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; }
+    .detail-item .dv { font-size: 14px; font-weight: 500; margin-top: 4px; word-break: break-word; }
+
+    /* Sub-section in modal */
+    .detail-section {
+      margin-top: 20px;
+    }
+    .detail-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text2);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .mini-table th, .mini-table td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .mini-table th {
+      font-weight: 600;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      font-size: 11px;
+      background: var(--card2);
+    }
+
+    /* Detail tabs inside modal */
+    .detail-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+      overflow-x: auto;
+    }
+    .detail-tab-btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      background: var(--card2);
+      color: var(--text2);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      transition: .2s;
+    }
+    .detail-tab-btn:hover { color: var(--text); }
+    .detail-tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .detail-tab-content { display: none; }
+    .detail-tab-content.active { display: block; }
+
+    /* --- Admin Panel --- */
+    .admin-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .admin-form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .admin-form input, .admin-form select {
+      padding: 8px 12px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .admin-form input:focus, .admin-form select:focus { border-color: var(--accent); }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: .2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { opacity: .85; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-icon { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; opacity: 0.7; }
+    .btn-icon:hover { opacity: 1; }
+
+    /* --- Empty State --- */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text3);
+    }
+    .empty-state svg { width: 48px; height: 48px; stroke: var(--text3); margin-bottom: 16px; }
+    .empty-state p { font-size: 14px; }
+
+    /* --- Responsive --- */
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .charts-grid { grid-template-columns: 1fr; }
+      .admin-grid { grid-template-columns: 1fr; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .topbar-title { display: none; }
+      .modal { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .main-content { padding: 12px; }
+    }
+
+    /* Scrollbars (dark mode) */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+    ::-webkit-scrollbar-corner { background: var(--bg2); }
+    [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg2); }
+    [data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border); }
+    [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+    * { scrollbar-width: thin; scrollbar-color: var(--border2) var(--bg2); }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Disk bar */
+    .disk-bar-wrap {
+      width: 100%;
+      height: 8px;
+      background: var(--card2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .disk-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width .3s;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--text3);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="topbar-left" id="topbarHome" style="cursor:pointer;" title="Go to Dashboard">
+      <div class="topbar-logo">
+        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+          <line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
+        </svg>
+      </div>
+      <span class="topbar-title">Vire</span>
+    </div>
+    <div class="topbar-right">
+      <span class="user-badge" id="userBadge"></span>
+      <button class="btn-icon" id="themeToggle" title="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button class="btn-icon" id="logoutBtn" title="Logout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main-content">
+    <!-- Tabs -->
+    <div class="tab-bar" id="mainTabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="servers">Servers</button>
+      <button class="tab-btn" data-tab="logbook">Logbook</button>
+      <button class="tab-btn" data-tab="gpo">Group Policies</button>
+    </div>
+
+    <!-- Dashboard Tab -->
+    <div class="tab-panel active" id="tab-dashboard">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <select class="search-input" id="dashboardDomainFilter" style="width:200px;"><option value="">All Domains</option></select>
+      </div>
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="charts-grid" id="chartsGrid"></div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Servers Needing Attention</h2>
+          <select class="search-input" id="attentionDomainFilter" style="width:200px;"><option value="">All Domains</option></select>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table" id="attentionTable">
+            <thead><tr><th>Hostname</th><th>Issue</th><th>Status</th></tr></thead>
+            <tbody id="attentionBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Servers Tab -->
+    <div class="tab-panel" id="tab-servers">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>All Servers</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="search-input" id="serverDomainFilter" style="width:180px;"><option value="">All Domains</option></select>
+            <input type="text" class="search-input" id="serverSearch" placeholder="Search servers...">
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table" id="serverTable">
+            <thead><tr>
+              <th class="sortable" data-sort="hostname">Hostname <span class="sort-arrow"></span></th>
+              <th>Status</th>
+              <th class="sortable" data-sort="os_edition">OS <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="is_virtual">Type <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="cpu_usage">CPU % <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="ram_used_gb">RAM <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="missing_critical_updates">Patches <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="antivirus_status">AV Status <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="reboot_pending">Reboot <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="updated_at">Last Update <span class="sort-arrow"></span></th>
+              <th></th>
+            </tr></thead>
+            <tbody id="serverBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logbook Tab -->
+    <div class="tab-panel" id="tab-logbook">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Logbook</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="search-input" id="logbookDomainFilter" style="width:180px;"><option value="">All Domains</option></select>
+            <select class="search-input" id="logbookServerFilter" style="width:200px;"><option value="">All Servers</option></select>
+            <input type="text" class="search-input" id="logbookSearch" placeholder="Search entries...">
+          </div>
+        </div>
+        <div id="globalLogbookContent" style="padding:16px;">
+          <div class="empty-state"><p>Loading logbook entries...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Policy Tab -->
+    <div class="tab-panel" id="tab-gpo">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Group Policy Objects</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="search-input" id="gpoDomainFilter" style="width:200px;"><option value="">All Domains</option></select>
+            <input type="text" class="search-input" id="gpoSearch" placeholder="Search policies...">
+          </div>
+        </div>
+        <div id="gpoContent" style="padding:16px;">
+          <div class="empty-state"><p>Loading group policies...</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div class="modal-overlay" id="adminModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Admin Panel</h2>
+        <button class="modal-close" id="adminModalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="adminModalBody">
+        <div class="admin-grid">
+          <div class="panel">
+            <div class="panel-header"><h2>Users</h2></div>
+            <div style="padding:16px;">
+              <div class="admin-form" id="addUserForm">
+                <input type="text" id="newUsername" placeholder="Username" autocomplete="off">
+                <input type="password" id="newPassword" placeholder="Password (min 8)" autocomplete="new-password">
+                <select id="newRole"><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+                <button class="btn btn-primary" id="addUserBtn">Add User</button>
+              </div>
+              <table class="data-table" id="usersTable">
+                <thead><tr><th>Username</th><th>Role</th><th>Last Login</th><th></th></tr></thead>
+                <tbody id="usersBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><h2>API Keys</h2></div>
+            <div style="padding:16px;">
+              <div class="admin-form" id="addKeyForm">
+                <input type="text" id="newKeyName" placeholder="Key name" autocomplete="off">
+                <button class="btn btn-primary" id="addKeyBtn">Generate Key</button>
+              </div>
+              <div id="newKeyDisplay" style="display:none;margin-bottom:12px;padding:12px;background:var(--success-bg);border-radius:var(--radius-sm);font-size:13px;">
+                <strong>New API Key (copy now, shown once):</strong><br>
+                <code id="newKeyValue" style="word-break:break-all;"></code>
+              </div>
+              <table class="data-table" id="keysTable">
+                <thead><tr><th>Name</th><th>Created</th><th>Last Used</th><th>Status</th><th></th></tr></thead>
+                <tbody id="keysBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- Groups Panel (full width below users & keys) -->
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-header"><h2>Permission Groups</h2></div>
+          <div style="padding:16px;">
+            <div class="admin-form" id="addGroupForm">
+              <input type="text" id="newGroupName" placeholder="Group name" autocomplete="off">
+              <input type="text" id="newGroupDesc" placeholder="Description (optional)" autocomplete="off" style="flex:1;">
+              <button class="btn btn-primary" id="addGroupBtn">Create Group</button>
+            </div>
+            <div id="groupsList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Detail Modal -->
+  <div class="modal-overlay" id="serverModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalHostname">Server Details</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="footer" id="footer">Vire</div>
+
+  <script src="app.js"></script>
+</body>
+</html>

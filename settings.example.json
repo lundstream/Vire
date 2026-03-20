@@ -1,0 +1,13 @@
+{
+  "siteName": "Vire",
+  "server": {
+    "port": 3000,
+    "https": false
+  },
+  "session": {
+    "secret": "CHANGE-THIS-TO-A-RANDOM-SECRET-STRING"
+  },
+  "defaultAdminPassword": "ChangeMe123!",
+  "historyRetentionDays": 90,
+  "footerText": "Vire"
+}
