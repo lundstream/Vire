@@ -3,7 +3,7 @@ services:
   inventory-web:
     build: .
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - inventory-data:/app/data
     restart: unless-stopped
