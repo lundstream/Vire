@@ -899,6 +899,29 @@
         </ol>
         <h3>GPO Deployment (recommended)</h3>
         <p>Use a Group Policy Preference <strong>Scheduled Task</strong> to push the script and schedule to all servers at once — no manual per-server setup needed.</p>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
+        <h3>Send-Heartbeat.ps1</h3>
+        <p>Lightweight script that sends CPU, RAM, disk, and stopped-service status every minute. The server must already be registered via the full inventory script.</p>
+        <div class="code-block">
+          <button class="code-copy" title="Copy">Copy</button>
+          <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">.\Send-Heartbeat.ps1 -ApiUrl "https://&lt;vire-host&gt;" -ApiKey "&lt;your-api-key&gt;"</pre>
+        </div>
+        <p>Run as <strong>SYSTEM</strong> via Scheduled Task, triggered every <strong>1 minute</strong>. Resource impact: ~5 MB RAM, &lt;200ms CPU per run.</p>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
+        <h3>Collect-DomainGPO.ps1</h3>
+        <p>Collects all Group Policy Objects and DNS zones from Active Directory. Must be run on a <strong>Domain Controller</strong> or a machine with the GroupPolicy and DnsServer modules (RSAT).</p>
+        <div class="code-block">
+          <button class="code-copy" title="Copy">Copy</button>
+          <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">.\Collect-DomainGPO.ps1 -ApiUrl "https://&lt;vire-host&gt;" -ApiKey "&lt;your-api-key&gt;"</pre>
+        </div>
+        <p>Run as a <strong>Domain Admin</strong> (or an account with GPO read permissions). Recommended frequency: every <strong>4–6 hours</strong>. Optionally specify <code>-Domain "contoso.com"</code> to target a specific domain.</p>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
         <h3>API Key</h3>
         <p>The API key is configured in <strong>settings.json</strong> on the Vire server under the <code>apiKey</code> field.</p>
       </div>
