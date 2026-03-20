@@ -247,6 +247,21 @@ function initSchema() {
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gpo_links ON domain_gpo_links(gpo_id);`); } catch(e){}
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gpo_settings ON domain_gpo_settings(gpo_id);`); } catch(e){}
 
+  // Installed software
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS server_installed_software (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id INTEGER NOT NULL,
+      name TEXT,
+      version TEXT,
+      publisher TEXT,
+      install_date TEXT,
+      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+    );
+  `);
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_software_server ON server_installed_software(server_id);`); } catch(e){}
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_software_name ON server_installed_software(name COLLATE NOCASE);`); } catch(e){}
+
   // Domain-level GPO tables
   d.exec(`
     CREATE TABLE IF NOT EXISTS domain_gpos (
@@ -642,6 +657,15 @@ function replaceChildData(serverId, data) {
     const ins = d.prepare('INSERT INTO server_local_policies (server_id, category, policy_name, setting) VALUES (?,?,?,?)');
     for (const p of data.local_policies) {
       ins.run(serverId, p.category || null, p.policy_name || null, p.setting || null);
+    }
+  }
+
+  // Installed software
+  d.prepare('DELETE FROM server_installed_software WHERE server_id = ?').run(serverId);
+  if (Array.isArray(data.installed_software)) {
+    const ins = d.prepare('INSERT INTO server_installed_software (server_id, name, version, publisher, install_date) VALUES (?,?,?,?,?)');
+    for (const sw of data.installed_software) {
+      ins.run(serverId, sw.name || null, sw.version || null, sw.publisher || null, sw.install_date || null);
     }
   }
 }
@@ -1339,23 +1363,42 @@ function getHighRiskCves(count, offset, maxAgeDays, vendor) {
   });
 }
 
-function getCveVendorStats(maxAgeDays) {
+function getCveVendorStats(maxAgeDays, vendors) {
   const d = getDb();
   const cutoff = new Date(Date.now() - (maxAgeDays || 90) * 24 * 60 * 60 * 1000).toISOString();
-  return d.prepare(`
-    SELECT vendor, COUNT(*) as total,
-      SUM(CASE WHEN cvss_score >= 9.0 THEN 1 ELSE 0 END) as critical,
-      SUM(CASE WHEN cvss_score >= 7.0 AND cvss_score < 9.0 THEN 1 ELSE 0 END) as high,
-      SUM(CASE WHEN kev = 1 THEN 1 ELSE 0 END) as kev_count
-    FROM cves
-    WHERE published >= ? AND vendor IS NOT NULL AND vendor != ''
-    GROUP BY lower(vendor)
-    ORDER BY critical DESC, high DESC, total DESC
-    LIMIT 20
-  `).all(cutoff).map(r => ({
-    vendor: r.vendor.charAt(0).toUpperCase() + r.vendor.slice(1),
-    total: r.total, critical: r.critical, high: r.high, kev_count: r.kev_count
-  }));
+  let where = `WHERE published >= ? AND published IS NOT NULL AND cvss_score IS NOT NULL
+    AND vendor IS NOT NULL AND vendor != ''`;
+  const params = [cutoff];
+  if (vendors && vendors.length) {
+    where += ` AND lower(vendor) IN (${vendors.map(() => '?').join(',')})`;
+    params.push(...vendors.map(v => v.toLowerCase()));
+  }
+  return d.prepare(`SELECT UPPER(SUBSTR(MAX(vendor),1,1)) || SUBSTR(MAX(vendor),2) as vendor,
+    COUNT(*) as total,
+    SUM(CASE WHEN (cvss_score * 10
+      + (CASE WHEN kev = 1 THEN 40 ELSE 0 END)
+      + (CASE WHEN has_exploit = 1 THEN 25 ELSE 0 END)
+      + (CASE WHEN has_patch = 0 THEN 20 ELSE 0 END)
+      + (COALESCE(epss_score, 0) * 100)) >= 200 THEN 1 ELSE 0 END) as critical_count,
+    SUM(CASE WHEN (cvss_score * 10
+      + (CASE WHEN kev = 1 THEN 40 ELSE 0 END)
+      + (CASE WHEN has_exploit = 1 THEN 25 ELSE 0 END)
+      + (CASE WHEN has_patch = 0 THEN 20 ELSE 0 END)
+      + (COALESCE(epss_score, 0) * 100)) >= 150 THEN 1 ELSE 0 END) as high_count,
+    ROUND(AVG(
+      (cvss_score * 10)
+      + (CASE WHEN kev = 1 THEN 40 ELSE 0 END)
+      + (CASE WHEN has_exploit = 1 THEN 25 ELSE 0 END)
+      + (CASE WHEN has_patch = 0 THEN 20 ELSE 0 END)
+      + (COALESCE(epss_score, 0) * 100)
+    ), 1) as avg_risk,
+    SUM(CASE WHEN kev = 1 THEN 1 ELSE 0 END) as kev_count,
+    SUM(CASE WHEN has_exploit = 1 THEN 1 ELSE 0 END) as exploit_count
+    FROM cves ${where}
+    GROUP BY vendor COLLATE NOCASE
+    HAVING high_count > 0
+    ORDER BY critical_count DESC, high_count DESC, avg_risk DESC
+    LIMIT 10`).all(...params);
 }
 
 function purgeCves(maxAgeDays) {
@@ -1393,11 +1436,13 @@ function getSecurityPosture(allowedDomains) {
   const updateStmt = d.prepare('SELECT kb_id, title, severity FROM server_missing_updates WHERE server_id = ?');
   const rolesStmt = d.prepare('SELECT name, type FROM server_roles WHERE server_id = ?');
   const servicesStmt = d.prepare('SELECT name, display_name, status FROM server_services WHERE server_id = ?');
+  const softwareStmt = d.prepare('SELECT name, version, publisher FROM server_installed_software WHERE server_id = ?');
 
   const result = servers.map(s => {
     const updates = updateStmt.all(s.id);
     const roles = rolesStmt.all(s.id);
     const services = servicesStmt.all(s.id);
+    const software = softwareStmt.all(s.id);
 
     const products = new Set();
     if (s.os_edition) {
@@ -1428,6 +1473,33 @@ function getSecurityPosture(allowedDomains) {
       if (sn.includes('ntds')) products.add('active_directory');
       if (sn.includes('exchange')) products.add('exchange');
     }
+    // Detect products from installed software
+    for (const sw of software) {
+      const n = (sw.name || '').toLowerCase();
+      if (n.includes('sql server')) products.add('sql_server');
+      if (n.includes('visual studio')) products.add('visual_studio');
+      if (n.includes('.net framework') || n.includes('.net runtime') || n.includes('.net sdk')) products.add('.net');
+      if (n.includes('exchange server')) products.add('exchange');
+      if (n.includes('sharepoint')) products.add('sharepoint');
+      if (n.includes('java') || n.includes('jdk') || n.includes('jre')) products.add('java');
+      if (n.includes('oracle') && !n.includes('java')) products.add('oracle');
+      if (n.includes('apache')) products.add('apache');
+      if (n.includes('tomcat')) products.add('tomcat');
+      if (n.includes('nginx')) products.add('nginx');
+      if (n.includes('node.js') || n.includes('nodejs')) products.add('nodejs');
+      if (n.includes('python')) products.add('python');
+      if (n.includes('php')) products.add('php');
+      if (n.includes('adobe')) products.add('adobe');
+      if (n.includes('vmware')) products.add('vmware');
+      if (n.includes('7-zip') || n.includes('7zip')) products.add('7-zip');
+      if (n.includes('openssh')) products.add('openssh');
+      if (n.includes('openssl')) products.add('openssl');
+      if (n.includes('git')) products.add('git');
+      if (n.includes('powershell')) products.add('powershell');
+      if (n.includes('chrome')) products.add('chrome');
+      if (n.includes('firefox')) products.add('firefox');
+      if (n.includes('edge')) products.add('edge');
+    }
 
     return {
       id: s.id,
@@ -1448,6 +1520,7 @@ function getSecurityPosture(allowedDomains) {
       critical_events_24h: s.critical_events_24h || 0,
       maintenance_mode: s.maintenance_mode,
       missing_updates: updates,
+      installed_software: software,
       products: Array.from(products),
       roles: roles.map(r => r.name),
     };
@@ -1495,8 +1568,32 @@ function productToKeywords(product) {
     '.net': ['.net framework', '.net core', 'dotnet'],
     'wsus': ['wsus', 'windows server update'],
     'exchange': ['exchange server', 'microsoft exchange'],
+    'sharepoint': ['sharepoint'],
+    'visual_studio': ['visual studio'],
+    'java': ['java', 'jdk', 'jre', 'openjdk'],
+    'oracle': ['oracle database', 'oracle db'],
+    'apache': ['apache http', 'apache2', 'httpd'],
+    'tomcat': ['tomcat', 'apache tomcat'],
+    'nginx': ['nginx'],
+    'nodejs': ['node.js', 'nodejs'],
+    'python': ['python', 'cpython'],
+    'php': ['php'],
+    'adobe': ['adobe acrobat', 'adobe reader'],
+    'vmware': ['vmware tools', 'vmware'],
+    '7-zip': ['7-zip', '7zip'],
+    'openssh': ['openssh'],
+    'openssl': ['openssl'],
+    'git': ['git'],
+    'powershell': ['powershell'],
+    'chrome': ['chrome', 'chromium'],
+    'firefox': ['firefox', 'mozilla firefox'],
+    'edge': ['microsoft edge'],
   };
   return map[product] || [product];
+}
+
+function getServerSoftware(serverId) {
+  return getDb().prepare('SELECT name, version, publisher, install_date FROM server_installed_software WHERE server_id = ? ORDER BY name').all(serverId);
 }
 
 function getSecuritySummary(allowedDomains) {
@@ -1542,4 +1639,5 @@ module.exports = {
   processHeartbeat,
   upsertCve, getCves, searchCves, getCveCount, getHighRiskCves, getCveVendorStats, purgeCves,
   getSecurityPosture, getMatchingCves, getSecuritySummary,
+  getServerSoftware,
 };

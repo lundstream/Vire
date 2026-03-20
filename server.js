@@ -322,6 +322,14 @@ app.get('/api/servers/:hostname/snapshots', requireLogin, (req, res) => {
   res.json(db.getServerSnapshots(server.id, days));
 });
 
+app.get('/api/servers/:hostname/software', requireLogin, (req, res) => {
+  const server = db.getServer(req.params.hostname);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const allowed = db.getUserAllowedDomains(req.session.user.id);
+  if (allowed && !allowed.includes(server.domain_or_workgroup)) return res.status(403).json({ error: 'No access to this domain' });
+  res.json(db.getServerSoftware(server.id));
+});
+
 app.delete('/api/servers/:hostname', requireLogin, requireAdmin, (req, res) => {
   const deleted = db.deleteServer(req.params.hostname);
   if (!deleted) return res.status(404).json({ error: 'Server not found' });
@@ -758,7 +766,14 @@ app.get('/api/cves/risk', requireLogin, (req, res) => {
 
 app.get('/api/cves/vendors', requireLogin, (req, res) => {
   const maxAge = Math.min(parseInt(req.query.maxAge || '90', 10), 365);
-  res.json(db.getCveVendorStats(maxAge));
+  const rawVendor = req.query.vendor;
+  let vendors = null;
+  if (rawVendor) {
+    const arr = Array.isArray(rawVendor) ? rawVendor : [rawVendor];
+    const filtered = arr.filter(v => v && v !== 'all');
+    if (filtered.length) vendors = filtered;
+  }
+  res.json(db.getCveVendorStats(maxAge, vendors));
 });
 
 app.get('/api/cves/count', requireLogin, (req, res) => {

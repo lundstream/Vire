@@ -256,6 +256,40 @@ foreach ($app in $knownApps) {
 }
 
 # ============================================================================
+#  INSTALLED SOFTWARE
+# ============================================================================
+Write-Host "Collecting installed software..." -ForegroundColor Cyan
+
+$installedSoftware = @()
+$regPaths = @(
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+)
+foreach ($regPath in $regPaths) {
+    Get-ItemProperty $regPath -ErrorAction SilentlyContinue | Where-Object {
+        $_.DisplayName -and $_.DisplayName.Trim() -ne '' -and -not $_.SystemComponent
+    } | ForEach-Object {
+        $name = $_.DisplayName.Trim()
+        # Skip duplicates
+        $exists = $installedSoftware | Where-Object { $_.name -eq $name }
+        if (-not $exists) {
+            $installDateRaw = $_.InstallDate
+            $installDate = $null
+            if ($installDateRaw -match '^\d{8}$') {
+                try { $installDate = [datetime]::ParseExact($installDateRaw, 'yyyyMMdd', $null).ToString('o') } catch {}
+            }
+            $installedSoftware += @{
+                name         = $name
+                version      = if ($_.DisplayVersion) { $_.DisplayVersion } else { $null }
+                publisher    = if ($_.Publisher) { $_.Publisher } else { $null }
+                install_date = $installDate
+            }
+        }
+    }
+}
+$installedSoftware = $installedSoftware | Sort-Object { $_.name }
+
+# ============================================================================
 #  RUNNING SERVICES (critical only)
 # ============================================================================
 Write-Host "Collecting critical services..." -ForegroundColor Cyan
@@ -596,6 +630,7 @@ $payload = @{
     firewall_rules          = $firewallRules
     gpos                    = $gpos
     local_policies          = $localPolicies
+    installed_software      = $installedSoftware
 }
 
 $json = $payload | ConvertTo-Json -Depth 10 -Compress

@@ -2299,6 +2299,7 @@
   let cveOffset = 0;
   let cveRiskMode = false;
   let cveLoaded = false;
+  let cveVendorChart = null;
 
   async function loadCvesView() {
     if (!cveLoaded) {
@@ -2341,11 +2342,22 @@
     }
   }
 
+  function updateRiskPanels() {
+    const formula = document.getElementById('cveRiskFormula');
+    const chartWrap = document.getElementById('cveRiskChartWrap');
+    const simpleBar = document.getElementById('cveVendorBarSimple');
+    if (formula) formula.style.display = cveRiskMode ? '' : 'none';
+    if (chartWrap) chartWrap.style.display = cveRiskMode ? '' : 'none';
+    if (simpleBar) simpleBar.style.display = cveRiskMode ? 'none' : '';
+  }
+
   async function refreshCveView(append) {
     const content = document.getElementById('cveContent');
     const loadMore = document.getElementById('cveLoadMore');
     const searchQ = (document.getElementById('cveSearch')?.value || '').trim();
     const cvssMin = document.getElementById('cveSeverityFilter')?.value || '';
+
+    updateRiskPanels();
 
     if (!append) {
       content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
@@ -2455,22 +2467,95 @@
   }
 
   async function loadCveVendors() {
-    const bar = document.getElementById('cveVendorBar');
-    if (!bar) return;
+    const simpleBar = document.getElementById('cveVendorBarSimple');
+    const riskBar = document.getElementById('cveVendorBar');
     try {
-      const r = await fetch('/api/cves/vendors?maxAge=30');
+      const r = await fetch('/api/cves/vendors?maxAge=60');
       const vendors = await r.json();
-      if (!vendors.length) { bar.innerHTML = ''; return; }
-      bar.innerHTML = vendors.slice(0, 10).map(v => {
-        const crit = v.critical > 0 ? `<span style="color:#e74c3c;font-weight:700">${v.critical}C</span>` : '';
-        const high = v.high > 0 ? `<span style="color:#e67e22;font-weight:600">${v.high}H</span>` : '';
-        return `<span style="display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;">
-          <strong>${esc(v.vendor)}</strong> ${v.total} ${crit} ${high}
-        </span>`;
-      }).join('');
+
+      // Simple vendor chips (non-risk mode)
+      if (simpleBar) {
+        if (!vendors.length) { simpleBar.innerHTML = ''; }
+        else {
+          simpleBar.innerHTML = vendors.slice(0, 10).map(v => {
+            const crit = v.critical_count > 0 ? `<span style="color:#e74c3c;font-weight:700">${v.critical_count}C</span>` : '';
+            const high = (v.high_count - (v.critical_count || 0)) > 0 ? `<span style="color:#e67e22;font-weight:600">${v.high_count - (v.critical_count || 0)}H</span>` : '';
+            return `<span style="display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;">
+              <strong>${esc(v.vendor)}</strong> ${v.total} ${crit} ${high}
+            </span>`;
+          }).join('');
+        }
+      }
+
+      // Risk vendor bar + chart (risk mode)
+      if (riskBar) {
+        if (!vendors.length) { riskBar.innerHTML = ''; }
+        else {
+          riskBar.innerHTML = vendors.map(v => {
+            const crit = v.critical_count > 0 ? `<span style="color:#ff2244;font-weight:700">${v.critical_count} crit</span>` : '';
+            const high = v.high_count > 0 ? `<span style="color:#ff6622;font-weight:600">${v.high_count} high</span>` : '';
+            const kev = v.kev_count > 0 ? `<span style="color:#e74c3c;font-weight:600">${v.kev_count} KEV</span>` : '';
+            return `<span style="display:inline-block;padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.5;">
+              <strong>${esc(v.vendor)}</strong><br>${v.total} total · avg ${Math.round(v.avg_risk || 0)}<br>${crit} ${high} ${kev}
+            </span>`;
+          }).join('');
+        }
+      }
+
+      // Vendor risk chart
+      renderCveVendorChart(vendors);
     } catch (e) {
-      bar.innerHTML = '';
+      if (simpleBar) simpleBar.innerHTML = '';
+      if (riskBar) riskBar.innerHTML = '';
     }
+  }
+
+  function renderCveVendorChart(vendors) {
+    const canvas = document.getElementById('cveVendorChart');
+    if (!canvas || !vendors || !vendors.length) return;
+    if (typeof Chart === 'undefined') return;
+
+    const labels = vendors.map(v => v.vendor || 'Unknown');
+    const criticals = vendors.map(v => v.critical_count || 0);
+    const highs = vendors.map(v => Math.max(0, (v.high_count || 0) - (v.critical_count || 0)));
+
+    if (cveVendorChart) cveVendorChart.destroy();
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const tickColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(40,20,60,0.6)';
+    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(100,60,140,0.08)';
+
+    cveVendorChart = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Critical (200+)',
+          data: criticals,
+          backgroundColor: '#ff2244',
+          borderRadius: 4,
+          barPercentage: 0.7
+        }, {
+          label: 'High (150+)',
+          data: highs,
+          backgroundColor: '#ff6622',
+          borderRadius: 4,
+          barPercentage: 0.7
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: tickColor, boxWidth: 12, font: { size: 11 } } }
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: tickColor, stepSize: 1 }, grid: { color: gridColor } },
+          y: { stacked: true, ticks: { color: tickColor, font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
   }
 
 })();
