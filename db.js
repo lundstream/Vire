@@ -290,6 +290,38 @@ function initSchema() {
 
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_domain_gpos_domain ON domain_gpos(domain);`); } catch(e){}
 
+  // Domain-level DNS tables
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS domain_dns_zones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain TEXT NOT NULL,
+      zone_name TEXT NOT NULL,
+      zone_type TEXT,
+      is_reverse_lookup INTEGER DEFAULT 0,
+      is_ad_integrated INTEGER DEFAULT 0,
+      dynamic_update TEXT,
+      aging_enabled INTEGER DEFAULT 0,
+      record_count INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(domain, zone_name)
+    );
+  `);
+
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS domain_dns_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      zone_id INTEGER NOT NULL,
+      record_name TEXT,
+      record_type TEXT,
+      record_data TEXT,
+      ttl TEXT,
+      FOREIGN KEY (zone_id) REFERENCES domain_dns_zones(id) ON DELETE CASCADE
+    );
+  `);
+
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_domain_dns_zones_domain ON domain_dns_zones(domain);`); } catch(e){}
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_dns_records_zone ON domain_dns_records(zone_id);`); } catch(e){}
+
   // Logbook comments
   d.exec(`
     CREATE TABLE IF NOT EXISTS server_logbook (
@@ -807,7 +839,8 @@ function getDashboardStats(domain, allowedDomains) {
     diskWarning: diskWarnServers.size, diskCritical: diskCritServers.size,
     diskAlerts,
     osDistribution, hypervisorDistribution,
-    domainHealth, attentionServers, domains
+    domainHealth, attentionServers, domains,
+    domainCount: domains.length
   };
 }
 
@@ -888,6 +921,58 @@ function getGPODomains() {
   return d.prepare('SELECT DISTINCT domain FROM domain_gpos ORDER BY domain').all().map(r => r.domain);
 }
 
+// --- Domain DNS ---
+function upsertDomainDNS(domain, zones) {
+  const d = getDb();
+  const domainUpper = (domain || '').toUpperCase();
+  if (!domainUpper || !Array.isArray(zones)) return;
+
+  const oldZones = d.prepare('SELECT id FROM domain_dns_zones WHERE domain = ?').all(domainUpper);
+  for (const z of oldZones) {
+    d.prepare('DELETE FROM domain_dns_records WHERE zone_id = ?').run(z.id);
+  }
+  d.prepare('DELETE FROM domain_dns_zones WHERE domain = ?').run(domainUpper);
+
+  const insZone = d.prepare(`INSERT INTO domain_dns_zones (domain, zone_name, zone_type, is_reverse_lookup, is_ad_integrated, dynamic_update, aging_enabled, record_count) VALUES (?,?,?,?,?,?,?,?)`);
+  const insRecord = d.prepare(`INSERT INTO domain_dns_records (zone_id, record_name, record_type, record_data, ttl) VALUES (?,?,?,?,?)`);
+
+  for (const zone of zones) {
+    const result = insZone.run(
+      domainUpper, zone.name || null, zone.type || null,
+      zone.is_reverse_lookup ? 1 : 0, zone.is_ad_integrated ? 1 : 0,
+      zone.dynamic_update || null, zone.aging_enabled ? 1 : 0,
+      zone.record_count || 0
+    );
+    const zoneId = result.lastInsertRowid;
+
+    if (Array.isArray(zone.records)) {
+      for (const r of zone.records) {
+        insRecord.run(zoneId, r.name || null, r.type || null, r.data || null, r.ttl || null);
+      }
+    }
+  }
+}
+
+function getDomainDNS(domain) {
+  const d = getDb();
+  let zones;
+  if (domain) {
+    zones = d.prepare('SELECT * FROM domain_dns_zones WHERE domain = ? ORDER BY zone_name').all((domain || '').toUpperCase());
+  } else {
+    zones = d.prepare('SELECT * FROM domain_dns_zones ORDER BY domain, zone_name').all();
+  }
+
+  for (const zone of zones) {
+    zone.records = d.prepare('SELECT * FROM domain_dns_records WHERE zone_id = ? ORDER BY record_type, record_name').all(zone.id);
+  }
+  return zones;
+}
+
+function getDNSDomains() {
+  const d = getDb();
+  return d.prepare('SELECT DISTINCT domain FROM domain_dns_zones ORDER BY domain').all().map(r => r.domain);
+}
+
 // --- Server Logbook ---
 function getLogbookEntries(serverId) {
   return getDb().prepare('SELECT * FROM server_logbook WHERE server_id = ? ORDER BY created_at DESC').all(serverId);
@@ -912,15 +997,12 @@ function setMaintenanceMode(serverId, until, comment, author) {
   const d = getDb();
   d.prepare(`UPDATE servers SET maintenance_mode = 1, maintenance_until = ?, maintenance_comment = ?, maintenance_set_by = ? WHERE id = ?`)
     .run(until, comment || '', author || 'system', serverId);
-  const untilFmt = until ? until.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 16) : until;
-  addLogbookEntry(serverId, author || 'system', `🔧 Maintenance started — ${comment || 'No comment'}. Until: ${untilFmt}`);
 }
 
 function clearMaintenanceMode(serverId, author) {
   const d = getDb();
   d.prepare(`UPDATE servers SET maintenance_mode = 0, maintenance_until = NULL, maintenance_comment = NULL, maintenance_set_by = NULL WHERE id = ?`)
     .run(serverId);
-  addLogbookEntry(serverId, author || 'system', '✅ Maintenance ended');
 }
 
 function getMaintenanceStatus(serverId) {
@@ -1068,6 +1150,7 @@ module.exports = {
   getDiskHistory, getServerSnapshots, deleteServer, getServerCount,
   getDashboardStats, searchServers, purgeHistory,
   upsertDomainGPOs, getDomainGPOs, getGPODomains,
+  upsertDomainDNS, getDomainDNS, getDNSDomains,
   getLogbookEntries, getAllLogbookEntries, addLogbookEntry, deleteLogbookEntry,
   setMaintenanceMode, clearMaintenanceMode, getMaintenanceStatus,
   getGroups, getGroup, createGroup, updateGroup, deleteGroup,

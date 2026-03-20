@@ -161,6 +161,11 @@
       border-radius: 999px;
       font-weight: 600;
     }
+    .maintenance-icon {
+      cursor: default;
+      font-size: 14px;
+      margin-left: 4px;
+    }
     .maint-form {
       display: flex;
       gap: 8px;
@@ -633,9 +638,10 @@
     <!-- Tabs -->
     <div class="tab-bar" id="mainTabs">
       <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="domains">Domains</button>
       <button class="tab-btn" data-tab="servers">Servers</button>
+      <button class="tab-btn" data-tab="maintenance">Maintenance</button>
       <button class="tab-btn" data-tab="logbook">Logbook</button>
-      <button class="tab-btn" data-tab="gpo">Group Policies</button>
     </div>
 
     <!-- Dashboard Tab -->
@@ -707,18 +713,40 @@
       </div>
     </div>
 
-    <!-- Group Policy Tab -->
-    <div class="tab-panel" id="tab-gpo">
+    <!-- Maintenance Tab -->
+    <div class="tab-panel" id="tab-maintenance">
       <div class="panel">
         <div class="panel-header">
-          <h2>Group Policy Objects</h2>
+          <h2>Maintenance</h2>
           <div style="display:flex;gap:8px;align-items:center;">
-            <select class="search-input" id="gpoDomainFilter" style="width:200px;"><option value="">All Domains</option></select>
-            <input type="text" class="search-input" id="gpoSearch" placeholder="Search policies...">
+            <select class="search-input" id="maintDomainFilter" style="width:180px;"><option value="">All Domains</option></select>
+            <input type="text" class="search-input" id="maintSearch" placeholder="Search servers...">
           </div>
         </div>
-        <div id="gpoContent" style="padding:16px;">
+        <div id="maintenanceContent" style="padding:16px;">
+          <div class="empty-state"><p>Loading maintenance data...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Domains Tab -->
+    <div class="tab-panel" id="tab-domains">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;">
+        <select class="search-input" id="domainsDomainFilter" style="width:200px;"><option value="">All Domains</option></select>
+        <input type="text" class="search-input" id="domainsSearch" placeholder="Search policies, zones, records...">
+      </div>
+      <div class="detail-tabs" id="domainsSubTabs">
+        <button class="detail-tab-btn active" data-dtab="gpo">Group Policies</button>
+        <button class="detail-tab-btn" data-dtab="dns">DNS Zones</button>
+      </div>
+      <div class="detail-tab-content active" id="dtab-gpo">
+        <div id="domainsGpoContent">
           <div class="empty-state"><p>Loading group policies...</p></div>
+        </div>
+      </div>
+      <div class="detail-tab-content" id="dtab-dns">
+        <div id="domainsDnsContent">
+          <div class="empty-state"><p>Loading DNS zones...</p></div>
         </div>
       </div>
     </div>
@@ -790,6 +818,19 @@
         <button class="modal-close" id="modalClose">&times;</button>
       </div>
       <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- KPI Overlay Modal -->
+  <div class="modal-overlay" id="kpiOverlay">
+    <div class="modal" style="width:800px;">
+      <div class="modal-header">
+        <h2 id="kpiOverlayTitle">Details</h2>
+        <button class="modal-close" id="kpiOverlayClose">&times;</button>
+      </div>
+      <div class="modal-body" id="kpiOverlayBody">
+        <div style="text-align:center;padding:40px;"><div class="spinner"></div></div>
+      </div>
     </div>
   </div>
 

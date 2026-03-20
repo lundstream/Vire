@@ -644,3 +644,341 @@ const insertAll = d.transaction(() => {
 
 insertAll();
 console.log('Historical data seeding complete.');
+
+// --- Seed Domain GPOs (domain-level, via upsertDomainGPOs) ---
+console.log('\nSeeding domain GPO data...');
+
+const domainGpoData = {
+  CONTOSO: [
+    { name: 'Default Domain Policy', guid: '{31B2F340-016D-11D2-945F-00C04FB984F9}', status: 'All settings enabled',
+      description: 'Default domain-wide policy for all objects', creation_time: '2023-06-15T08:30:00', modification_time: '2026-02-10T14:22:00',
+      links: [{ target: 'DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Minimum password length', value: '14' },
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Maximum password age', value: '90 days' },
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Enforce password history', value: '24 passwords' },
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Password must meet complexity', value: 'Enabled' },
+        { area: 'Computer', category: 'Account Policies / Lockout Policy', name: 'Account lockout threshold', value: '5 invalid logon attempts' },
+        { area: 'Computer', category: 'Account Policies / Lockout Policy', name: 'Account lockout duration', value: '30 minutes' }
+      ]
+    },
+    { name: 'Server Hardening Policy', guid: '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}', status: 'All settings enabled',
+      description: 'Baseline security hardening for all servers', creation_time: '2023-08-20T10:00:00', modification_time: '2026-03-01T09:15:00',
+      links: [{ target: 'OU=Servers,DC=contoso,DC=local', enabled: true, enforced: true, order: 1 },
+              { target: 'OU=Domain Controllers,DC=contoso,DC=local', enabled: true, enforced: false, order: 2 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Local Policies', name: 'Audit logon events', value: 'Success, Failure' },
+        { area: 'Computer', category: 'Security Settings / Local Policies', name: 'Audit account management', value: 'Success, Failure' },
+        { area: 'Computer', category: 'Security Settings / Local Policies', name: 'Audit policy change', value: 'Success, Failure' },
+        { area: 'Computer', category: 'Security Settings / Security Options', name: 'Interactive logon: Do not display last user name', value: 'Enabled' },
+        { area: 'Computer', category: 'Security Settings / Security Options', name: 'Network access: Do not allow anonymous enumeration of SAM accounts', value: 'Enabled' },
+        { area: 'Computer', category: 'Security Settings / Security Options', name: 'Network security: LAN Manager authentication level', value: 'Send NTLMv2 response only. Refuse LM & NTLM' },
+        { area: 'Computer', category: 'Windows Settings / Security Settings', name: 'Windows Firewall: Domain Profile state', value: 'On' },
+        { area: 'Computer', category: 'Windows Settings / Security Settings', name: 'Windows Firewall: Allow inbound RDP', value: 'Management subnet only' }
+      ]
+    },
+    { name: 'Windows Update Policy', guid: '{B2C3D4E5-F6A7-8901-BCDE-F12345678901}', status: 'All settings enabled',
+      description: 'WSUS auto-update configuration', creation_time: '2023-09-01T08:00:00', modification_time: '2026-01-15T11:30:00',
+      links: [{ target: 'OU=Servers,DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Configure Automatic Updates', value: '4 - Auto download and schedule install' },
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Scheduled install day', value: 'Every Sunday' },
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Scheduled install time', value: '03:00' },
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Specify intranet Microsoft update service location', value: 'https://wsus01.contoso.local:8531' }
+      ]
+    },
+    { name: 'Audit Policy', guid: '{C3D4E5F6-A7B8-9012-CDEF-012345678902}', status: 'All settings enabled',
+      description: 'Advanced audit policy for compliance logging', creation_time: '2024-01-10T09:00:00', modification_time: '2026-02-20T16:45:00',
+      links: [{ target: 'DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Advanced Audit Policy / Account Logon', name: 'Audit Credential Validation', value: 'Success and Failure' },
+        { area: 'Computer', category: 'Advanced Audit Policy / Account Logon', name: 'Audit Kerberos Authentication Service', value: 'Success and Failure' },
+        { area: 'Computer', category: 'Advanced Audit Policy / Logon/Logoff', name: 'Audit Logon', value: 'Success and Failure' },
+        { area: 'Computer', category: 'Advanced Audit Policy / Logon/Logoff', name: 'Audit Special Logon', value: 'Success' },
+        { area: 'Computer', category: 'Advanced Audit Policy / Object Access', name: 'Audit File System', value: 'Success and Failure' },
+        { area: 'Computer', category: 'Advanced Audit Policy / Privilege Use', name: 'Audit Sensitive Privilege Use', value: 'Success and Failure' }
+      ]
+    },
+    { name: 'Web Server Hardening', guid: '{D4E5F6A7-B8C9-0123-DEF0-123456789012}', status: 'All settings enabled',
+      description: 'IIS-specific security and TLS configuration', creation_time: '2024-02-15T10:30:00', modification_time: '2026-02-28T08:00:00',
+      links: [{ target: 'OU=Web Servers,OU=Servers,DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Network / SSL', name: 'SSL Cipher Suite Order', value: 'TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256' },
+        { area: 'Computer', category: 'Administrative Templates / Network / SSL', name: 'Minimum TLS version', value: 'TLS 1.2' },
+        { area: 'Computer', category: 'Security Settings / Software Restriction', name: 'Disallowed executables', value: 'cmd.exe, powershell.exe for IIS_IUSRS' }
+      ]
+    },
+    { name: 'SQL Server Hardening', guid: '{E5F6A7B8-C9D0-1234-EF01-234567890123}', status: 'All settings enabled',
+      description: 'Database server security and network restrictions', creation_time: '2024-03-01T14:00:00', modification_time: '2026-01-20T10:00:00',
+      links: [{ target: 'OU=SQL Servers,OU=Servers,DC=contoso,DC=local', enabled: true, enforced: true, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Firewall', name: 'Allow SQL port 1433', value: 'Inbound from 10.0.0.0/8 only' },
+        { area: 'Computer', category: 'Security Settings / Firewall', name: 'Block outbound internet', value: 'TCP 80,443 to Any' },
+        { area: 'Computer', category: 'Security Settings / Local Policies', name: 'Deny log on locally', value: 'Guests, NT AUTHORITY\\Local Account' }
+      ]
+    },
+    { name: 'File Server Policy', guid: '{F6A7B8C9-D0E1-2345-F012-345678901234}', status: 'All settings enabled',
+      description: 'DFS, file screening, and access-based enumeration', creation_time: '2023-10-15T11:00:00', modification_time: '2025-12-01T09:30:00',
+      links: [{ target: 'OU=File Servers,OU=Servers,DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Network / Lanman Server', name: 'Enable access-based enumeration', value: 'Enabled' },
+        { area: 'Computer', category: 'Administrative Templates / System / Disk Quotas', name: 'Enable disk quotas', value: 'Enabled' },
+        { area: 'Computer', category: 'Administrative Templates / System / Disk Quotas', name: 'Default quota limit', value: '50 GB' }
+      ]
+    },
+    { name: 'BitLocker Encryption Policy', guid: '{A7B8C9D0-E1F2-3456-0123-456789012345}', status: 'All settings enabled',
+      description: 'Enforce BitLocker on system drives', creation_time: '2024-06-01T08:00:00', modification_time: '2026-01-05T12:00:00',
+      links: [{ target: 'OU=Servers,DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / BitLocker / OS Drives', name: 'Require additional authentication at startup', value: 'Enabled (TPM required)' },
+        { area: 'Computer', category: 'Administrative Templates / BitLocker / OS Drives', name: 'Encryption method', value: 'XTS-AES 256-bit' }
+      ]
+    },
+    { name: 'Remote Desktop Restrictions', guid: '{B8C9D0E1-F2A3-4567-0123-567890123456}', status: 'All settings enabled',
+      description: 'Restrict RDP access and enforce NLA', creation_time: '2024-04-10T09:00:00', modification_time: '2026-03-05T14:30:00',
+      links: [{ target: 'DC=contoso,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Remote Desktop Services', name: 'Require Network Level Authentication', value: 'Enabled' },
+        { area: 'Computer', category: 'Administrative Templates / Remote Desktop Services', name: 'Set client connection encryption level', value: 'High Level' },
+        { area: 'Computer', category: 'Administrative Templates / Remote Desktop Services', name: 'Session idle timeout', value: '15 minutes' }
+      ]
+    }
+  ],
+  FABRIKAM: [
+    { name: 'Default Domain Policy', guid: '{31B2F340-016D-11D2-945F-00C04FB984F9}', status: 'All settings enabled',
+      description: 'Default domain-wide policy', creation_time: '2022-01-10T08:00:00', modification_time: '2025-11-20T10:00:00',
+      links: [{ target: 'DC=fabrikam,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Minimum password length', value: '12' },
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Maximum password age', value: '60 days' },
+        { area: 'Computer', category: 'Account Policies / Lockout Policy', name: 'Account lockout threshold', value: '10 invalid logon attempts' }
+      ]
+    },
+    { name: 'Web Server Hardening', guid: '{D4E5F6A7-B8C9-0123-DEF0-FABFABFAB012}', status: 'All settings enabled',
+      description: 'IIS security for web tier', creation_time: '2023-03-15T09:30:00', modification_time: '2026-01-12T11:00:00',
+      links: [{ target: 'OU=Web Servers,DC=fabrikam,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Network / SSL', name: 'Minimum TLS version', value: 'TLS 1.2' },
+        { area: 'Computer', category: 'Security Settings / IIS', name: 'Remove default web site', value: 'Enabled' }
+      ]
+    },
+    { name: 'App Server Baseline', guid: '{E5F6A7B8-C9D0-1234-EF01-FABFABFAB123}', status: 'All settings enabled',
+      description: 'Application server security baseline', creation_time: '2023-06-01T13:00:00', modification_time: '2026-02-14T09:30:00',
+      links: [{ target: 'OU=Application Servers,DC=fabrikam,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Local Policies', name: 'Audit process creation', value: 'Enabled (include command line)' },
+        { area: 'Computer', category: 'Administrative Templates / System', name: 'Enable PowerShell Script Block Logging', value: 'Enabled' },
+        { area: 'Computer', category: 'Administrative Templates / System', name: 'Enable PowerShell Transcription', value: 'Enabled (output to \\\\fs01\\logs\\ps)' }
+      ]
+    },
+    { name: 'Windows Update Policy', guid: '{B2C3D4E5-F6A7-8901-BCDE-FABFABFAB901}', status: 'All settings enabled',
+      description: 'WSUS configuration for Fabrikam', creation_time: '2022-04-01T08:00:00', modification_time: '2025-12-10T08:45:00',
+      links: [{ target: 'DC=fabrikam,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Configure Automatic Updates', value: '3 - Auto download and notify for install' },
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Specify intranet Microsoft update service location', value: 'https://wsus.fabrikam.local:8531' }
+      ]
+    },
+    { name: 'Firewall Baseline', guid: '{C3D4E5F6-A7B8-9012-CDEF-FABFABFAB456}', status: 'All settings enabled',
+      description: 'Domain-wide firewall rules baseline', creation_time: '2023-09-20T15:00:00', modification_time: '2026-02-01T16:20:00',
+      links: [{ target: 'DC=fabrikam,DC=local', enabled: true, enforced: true, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Windows Settings / Security Settings', name: 'Windows Firewall: Domain Profile state', value: 'On' },
+        { area: 'Computer', category: 'Windows Settings / Security Settings', name: 'Windows Firewall: Block all inbound by default', value: 'Enabled' },
+        { area: 'Computer', category: 'Windows Settings / Security Settings', name: 'Windows Firewall: Allow WinRM', value: '10.0.0.0/8' }
+      ]
+    },
+    { name: 'Restricted Groups', guid: '{F6A7B8C9-D0E1-2345-F012-FABFABFAB789}', status: 'Computer settings disabled',
+      description: 'Control local admin group membership', creation_time: '2024-01-15T10:00:00', modification_time: '2025-10-30T14:45:00',
+      links: [{ target: 'OU=Servers,DC=fabrikam,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Restricted Groups', name: 'Administrators', value: 'FABRIKAM\\Domain Admins, FABRIKAM\\Server Admins' },
+        { area: 'Computer', category: 'Security Settings / Restricted Groups', name: 'Remote Desktop Users', value: 'FABRIKAM\\RDP_Users' }
+      ]
+    }
+  ],
+  NORTHWIND: [
+    { name: 'Default Domain Policy', guid: '{31B2F340-016D-11D2-945F-00C04FB984F9}', status: 'All settings enabled',
+      description: 'Default domain policy', creation_time: '2021-05-01T08:00:00', modification_time: '2025-08-15T11:00:00',
+      links: [{ target: 'DC=northwind,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Minimum password length', value: '10' },
+        { area: 'Computer', category: 'Account Policies / Password Policy', name: 'Maximum password age', value: '120 days' },
+        { area: 'Computer', category: 'Account Policies / Lockout Policy', name: 'Account lockout threshold', value: '5 invalid logon attempts' }
+      ]
+    },
+    { name: 'ERP Server Policy', guid: '{A1B2C3D4-E5F6-7890-ABCD-NWNWNWNW0001}', status: 'All settings enabled',
+      description: 'ERP application server configuration', creation_time: '2022-06-10T14:00:00', modification_time: '2026-01-28T09:15:00',
+      links: [{ target: 'OU=ERP,OU=Servers,DC=northwind,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Firewall', name: 'Allow ERP port 8443', value: 'Inbound from 192.168.0.0/16 only' },
+        { area: 'Computer', category: 'Administrative Templates / System', name: 'Maximum log file size (Application)', value: '256 MB' },
+        { area: 'Computer', category: 'Administrative Templates / System', name: 'Enable crash dump collection', value: 'Full memory dump' }
+      ]
+    },
+    { name: 'Citrix Session Policy', guid: '{B2C3D4E5-F6A7-8901-BCDE-NWNWNWNW0002}', status: 'All settings enabled',
+      description: 'Citrix session host publishing and security', creation_time: '2022-09-01T10:00:00', modification_time: '2026-02-05T16:30:00',
+      links: [{ target: 'OU=Citrix,OU=Servers,DC=northwind,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'User', category: 'Administrative Templates / Citrix / Session', name: 'Session idle timeout', value: '30 minutes' },
+        { area: 'User', category: 'Administrative Templates / Citrix / Session', name: 'Disconnected session timeout', value: '60 minutes' },
+        { area: 'Computer', category: 'Administrative Templates / Citrix / Publishing', name: 'Published applications', value: 'ERP Client, Office 365, SAP GUI' }
+      ]
+    },
+    { name: 'Windows Update Policy', guid: '{C3D4E5F6-A7B8-9012-CDEF-NWNWNWNW0003}', status: 'All settings enabled',
+      description: 'Patch management via WSUS', creation_time: '2021-08-01T08:00:00', modification_time: '2025-11-01T09:00:00',
+      links: [{ target: 'DC=northwind,DC=local', enabled: true, enforced: false, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Configure Automatic Updates', value: '2 - Notify for download and auto install' },
+        { area: 'Computer', category: 'Administrative Templates / Windows Update', name: 'Specify intranet Microsoft update service location', value: 'http://wsus.northwind.local:8530' }
+      ]
+    },
+    { name: 'Backup Network Policy', guid: '{D4E5F6A7-B8C9-0123-DEF0-NWNWNWNW0004}', status: 'User settings disabled',
+      description: 'Isolate backup traffic to dedicated VLAN', creation_time: '2023-04-12T10:00:00', modification_time: '2025-09-15T13:00:00',
+      links: [{ target: 'OU=Backup,OU=Servers,DC=northwind,DC=local', enabled: true, enforced: true, order: 1 }],
+      settings: [
+        { area: 'Computer', category: 'Security Settings / Firewall', name: 'Allow Veeam port 9392', value: 'Inbound from backup VLAN 192.168.100.0/24' },
+        { area: 'Computer', category: 'Security Settings / Firewall', name: 'Block all other inbound', value: 'Default deny' }
+      ]
+    }
+  ]
+};
+
+for (const [domain, gpos] of Object.entries(domainGpoData)) {
+  try {
+    db.upsertDomainGPOs(domain, gpos);
+    console.log(`  [OK] ${domain} — ${gpos.length} GPOs`);
+  } catch (e) {
+    console.error(`  [FAIL] ${domain}: ${e.message}`);
+  }
+}
+console.log('Domain GPO data seeding complete.');
+
+// --- Seed DNS zones and records ---
+console.log('\nSeeding DNS zone data...');
+
+const dnsData = {
+  CONTOSO: [
+    {
+      name: 'contoso.local', type: 'Primary', is_reverse_lookup: false, is_ad_integrated: true,
+      dynamic_update: 'Secure', aging_enabled: true, record_count: 18,
+      records: [
+        { name: '@', type: 'SOA', data: 'dc01.contoso.local admin.contoso.local', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'dc01.contoso.local', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'dc02.contoso.local', ttl: '01:00:00' },
+        { name: '@', type: 'A', data: '10.0.1.10', ttl: '00:20:00' },
+        { name: 'dc01', type: 'A', data: '10.0.1.10', ttl: '00:20:00' },
+        { name: 'dc02', type: 'A', data: '10.0.1.11', ttl: '00:20:00' },
+        { name: 'web01', type: 'A', data: '10.0.2.10', ttl: '00:20:00' },
+        { name: 'web02', type: 'A', data: '10.0.2.11', ttl: '00:20:00' },
+        { name: 'sql01', type: 'A', data: '10.0.3.10', ttl: '00:20:00' },
+        { name: 'mail', type: 'A', data: '10.0.4.10', ttl: '00:20:00' },
+        { name: 'vpn', type: 'A', data: '10.0.5.1', ttl: '00:20:00' },
+        { name: '@', type: 'MX', data: '10 mail.contoso.local', ttl: '01:00:00' },
+        { name: '@', type: 'MX', data: '20 mail-backup.contoso.local', ttl: '01:00:00' },
+        { name: '@', type: 'TXT', data: 'v=spf1 mx a:mail.contoso.local -all', ttl: '01:00:00' },
+        { name: 'www', type: 'CNAME', data: 'web01.contoso.local', ttl: '00:20:00' },
+        { name: 'intranet', type: 'CNAME', data: 'web02.contoso.local', ttl: '00:20:00' },
+        { name: '_ldap._tcp', type: 'SRV', data: '0 100 389 dc01.contoso.local', ttl: '00:10:00' },
+        { name: '_kerberos._tcp', type: 'SRV', data: '0 100 88 dc01.contoso.local', ttl: '00:10:00' }
+      ]
+    },
+    {
+      name: '1.0.10.in-addr.arpa', type: 'Primary', is_reverse_lookup: true, is_ad_integrated: true,
+      dynamic_update: 'Secure', aging_enabled: false, record_count: 3,
+      records: [
+        { name: '10', type: 'PTR', data: 'dc01.contoso.local', ttl: '00:20:00' },
+        { name: '11', type: 'PTR', data: 'dc02.contoso.local', ttl: '00:20:00' },
+        { name: '@', type: 'SOA', data: 'dc01.contoso.local admin.contoso.local', ttl: '01:00:00' }
+      ]
+    },
+    {
+      name: '2.0.10.in-addr.arpa', type: 'Primary', is_reverse_lookup: true, is_ad_integrated: true,
+      dynamic_update: 'Secure', aging_enabled: false, record_count: 2,
+      records: [
+        { name: '10', type: 'PTR', data: 'web01.contoso.local', ttl: '00:20:00' },
+        { name: '11', type: 'PTR', data: 'web02.contoso.local', ttl: '00:20:00' }
+      ]
+    },
+    {
+      name: 'contoso.com', type: 'Primary', is_reverse_lookup: false, is_ad_integrated: false,
+      dynamic_update: 'None', aging_enabled: false, record_count: 8,
+      records: [
+        { name: '@', type: 'SOA', data: 'ns1.contoso.com admin.contoso.com', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'ns1.contoso.com', ttl: '01:00:00' },
+        { name: '@', type: 'A', data: '203.0.113.10', ttl: '01:00:00' },
+        { name: 'www', type: 'CNAME', data: 'cdn.contoso.com', ttl: '00:05:00' },
+        { name: 'cdn', type: 'A', data: '203.0.113.20', ttl: '00:05:00' },
+        { name: '@', type: 'MX', data: '10 mail.contoso.com', ttl: '01:00:00' },
+        { name: '@', type: 'TXT', data: 'v=spf1 include:_spf.contoso.com -all', ttl: '01:00:00' },
+        { name: '_dmarc', type: 'TXT', data: 'v=DMARC1; p=quarantine; rua=mailto:dmarc@contoso.com', ttl: '01:00:00' }
+      ]
+    }
+  ],
+  FABRIKAM: [
+    {
+      name: 'fabrikam.local', type: 'Primary', is_reverse_lookup: false, is_ad_integrated: true,
+      dynamic_update: 'Secure', aging_enabled: true, record_count: 12,
+      records: [
+        { name: '@', type: 'SOA', data: 'dc01.fabrikam.local admin.fabrikam.local', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'dc01.fabrikam.local', ttl: '01:00:00' },
+        { name: 'dc01', type: 'A', data: '172.16.1.10', ttl: '00:20:00' },
+        { name: 'app01', type: 'A', data: '172.16.2.10', ttl: '00:20:00' },
+        { name: 'app02', type: 'A', data: '172.16.2.11', ttl: '00:20:00' },
+        { name: 'db01', type: 'A', data: '172.16.3.10', ttl: '00:20:00' },
+        { name: 'fs01', type: 'A', data: '172.16.4.10', ttl: '00:20:00' },
+        { name: 'print01', type: 'A', data: '172.16.4.20', ttl: '00:20:00' },
+        { name: 'portal', type: 'CNAME', data: 'app01.fabrikam.local', ttl: '00:20:00' },
+        { name: 'api', type: 'CNAME', data: 'app02.fabrikam.local', ttl: '00:20:00' },
+        { name: '_ldap._tcp', type: 'SRV', data: '0 100 389 dc01.fabrikam.local', ttl: '00:10:00' },
+        { name: '@', type: 'MX', data: '10 mail.fabrikam.local', ttl: '01:00:00' }
+      ]
+    },
+    {
+      name: '16.172.in-addr.arpa', type: 'Primary', is_reverse_lookup: true, is_ad_integrated: true,
+      dynamic_update: 'Secure', aging_enabled: false, record_count: 2,
+      records: [
+        { name: '10.1', type: 'PTR', data: 'dc01.fabrikam.local', ttl: '00:20:00' },
+        { name: '10.2', type: 'PTR', data: 'app01.fabrikam.local', ttl: '00:20:00' }
+      ]
+    }
+  ],
+  NORTHWIND: [
+    {
+      name: 'northwind.local', type: 'Primary', is_reverse_lookup: false, is_ad_integrated: true,
+      dynamic_update: 'NonsecureAndSecure', aging_enabled: false, record_count: 9,
+      records: [
+        { name: '@', type: 'SOA', data: 'dc01.northwind.local admin.northwind.local', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'dc01.northwind.local', ttl: '01:00:00' },
+        { name: 'dc01', type: 'A', data: '192.168.1.10', ttl: '00:20:00' },
+        { name: 'erp01', type: 'A', data: '192.168.2.10', ttl: '00:20:00' },
+        { name: 'erp02', type: 'A', data: '192.168.2.11', ttl: '00:20:00' },
+        { name: 'citrix01', type: 'A', data: '192.168.3.10', ttl: '00:20:00' },
+        { name: 'remote', type: 'CNAME', data: 'citrix01.northwind.local', ttl: '00:20:00' },
+        { name: '@', type: 'MX', data: '10 mail.northwind.local', ttl: '01:00:00' },
+        { name: '@', type: 'TXT', data: 'v=spf1 mx -all', ttl: '01:00:00' }
+      ]
+    },
+    {
+      name: 'northwind.com', type: 'Secondary', is_reverse_lookup: false, is_ad_integrated: false,
+      dynamic_update: 'None', aging_enabled: false, record_count: 4,
+      records: [
+        { name: '@', type: 'SOA', data: 'ns1.northwind.com admin.northwind.com', ttl: '01:00:00' },
+        { name: '@', type: 'NS', data: 'ns1.northwind.com', ttl: '01:00:00' },
+        { name: '@', type: 'A', data: '198.51.100.10', ttl: '01:00:00' },
+        { name: 'www', type: 'A', data: '198.51.100.10', ttl: '00:05:00' }
+      ]
+    }
+  ]
+};
+
+for (const [domain, zones] of Object.entries(dnsData)) {
+  try {
+    db.upsertDomainDNS(domain, zones);
+    const totalRecords = zones.reduce((sum, z) => sum + (z.records ? z.records.length : 0), 0);
+    console.log(`  [OK] ${domain} — ${zones.length} zones, ${totalRecords} records`);
+  } catch (e) {
+    console.error(`  [FAIL] ${domain}: ${e.message}`);
+  }
+}
+console.log('DNS data seeding complete.');

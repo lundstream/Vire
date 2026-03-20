@@ -80,8 +80,9 @@
         if (panel) panel.classList.add('active');
 
         // Lazy load tab data
-        if (btn.dataset.tab === 'gpo') loadGPOView();
+        if (btn.dataset.tab === 'domains') loadDomainsView();
         if (btn.dataset.tab === 'logbook') loadGlobalLogbook();
+        if (btn.dataset.tab === 'maintenance') loadMaintenanceView();
       });
     });
 
@@ -171,43 +172,49 @@
   function renderStats(stats) {
     const grid = document.getElementById('statsGrid');
     const hasHeartbeat = stats.online > 0 || stats.offline > 0;
+    const kpiStyle = 'cursor:pointer;';
     grid.innerHTML = `
-      <div class="stat-card accent">
+      <div class="stat-card accent" style="${kpiStyle}" onclick="showKpiOverlay('domains')">
+        <div class="stat-label">Total Domains</div>
+        <div class="stat-value">${stats.domainCount || 0}</div>
+        <div class="stat-sub">active domains</div>
+      </div>
+      <div class="stat-card accent" style="${kpiStyle}" onclick="showKpiOverlay('total')">
         <div class="stat-label">Total Servers</div>
         <div class="stat-value">${stats.total}</div>
         <div class="stat-sub">${stats.virtual} virtual, ${stats.physical} physical</div>
       </div>
-      ${hasHeartbeat ? `<div class="stat-card ${stats.offline > 0 ? 'danger' : 'success'}">
+      ${hasHeartbeat ? `<div class="stat-card ${stats.offline > 0 ? 'danger' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('status')">
         <div class="stat-label">Server Status</div>
         <div class="stat-value">${stats.online} <span style="font-size:14px;color:var(--text3)">/ ${stats.total - stats.neverReported}</span></div>
         <div class="stat-sub">${stats.online} online, ${stats.offline} offline${stats.neverReported > 0 ? ', ' + stats.neverReported + ' no heartbeat' : ''}</div>
       </div>` : ''}
-      <div class="stat-card ${stats.rebootPending > 0 ? 'warning' : 'success'}">
+      <div class="stat-card ${stats.rebootPending > 0 ? 'warning' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('reboot')">
         <div class="stat-label">Reboot Pending</div>
         <div class="stat-value">${stats.rebootPending}</div>
         <div class="stat-sub">servers need restart</div>
       </div>
-      <div class="stat-card ${stats.missingUpdates > 0 ? 'danger' : 'success'}">
+      <div class="stat-card ${stats.missingUpdates > 0 ? 'danger' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('updates')">
         <div class="stat-label">Missing Updates</div>
         <div class="stat-value">${stats.missingUpdates}</div>
         <div class="stat-sub">servers with critical patches missing</div>
       </div>
-      <div class="stat-card ${stats.criticalEvents > 0 ? 'danger' : 'success'}">
+      <div class="stat-card ${stats.criticalEvents > 0 ? 'danger' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('events')">
         <div class="stat-label">Critical Events</div>
         <div class="stat-value">${stats.criticalEvents}</div>
         <div class="stat-sub">servers with critical errors (24h)</div>
       </div>
-      <div class="stat-card ${stats.diskCritical > 0 ? 'danger' : stats.diskWarning > 0 ? 'warning' : 'success'}">
+      <div class="stat-card ${stats.diskCritical > 0 ? 'danger' : stats.diskWarning > 0 ? 'warning' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('disk')">
         <div class="stat-label">Disk Space</div>
         <div class="stat-value">${stats.diskCritical > 0 ? stats.diskCritical : stats.diskWarning}</div>
         <div class="stat-sub">${stats.diskCritical > 0 ? stats.diskCritical + ' critical' : ''} ${stats.diskWarning > 0 ? stats.diskWarning + ' warning' : ''} ${stats.diskCritical === 0 && stats.diskWarning === 0 ? 'all disks healthy' : ''}</div>
       </div>
-      ${stats.serviceIssues > 0 ? `<div class="stat-card warning">
+      ${stats.serviceIssues > 0 ? `<div class="stat-card warning" style="${kpiStyle}" onclick="showKpiOverlay('services')">
         <div class="stat-label">Service Issues</div>
         <div class="stat-value">${stats.serviceIssues}</div>
         <div class="stat-sub">servers with stopped auto-start services</div>
       </div>` : ''}
-      <div class="stat-card ${stats.inMaintenance > 0 ? 'warning' : 'success'}">
+      <div class="stat-card ${stats.inMaintenance > 0 ? 'warning' : 'success'}" style="${kpiStyle}" onclick="showKpiOverlay('maintenance')">
         <div class="stat-label">In Maintenance</div>
         <div class="stat-value">${stats.inMaintenance}</div>
         <div class="stat-sub">${stats.inMaintenance > 0 ? 'servers in maintenance' : 'no servers in maintenance'}</div>
@@ -242,10 +249,6 @@
         <div class="chart-canvas-wrap"><canvas id="chartType"></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Hypervisor Distribution</h3>
-        <div class="chart-canvas-wrap"><canvas id="chartHypervisor"></canvas></div>
-      </div>
-      <div class="chart-card">
         <h3>Health Overview</h3>
         <div class="chart-canvas-wrap"><canvas id="chartHealth"></canvas></div>
       </div>
@@ -273,18 +276,6 @@
       data: {
         labels: ['Virtual', 'Physical'],
         datasets: [{ data: [stats.virtual, stats.physical], backgroundColor: [colors.accent, colors.info], borderWidth: 0 }]
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: colors.text, font: { size: 11 } } } } }
-    });
-
-    // Hypervisor
-    const hvLabels = (stats.hypervisorDistribution || []).map(h => h.hypervisor || 'Unknown');
-    const hvData = (stats.hypervisorDistribution || []).map(h => h.count);
-    charts.hypervisor = new Chart(document.getElementById('chartHypervisor'), {
-      type: 'doughnut',
-      data: {
-        labels: hvLabels,
-        datasets: [{ data: hvData, backgroundColor: colors.palette.slice(0, hvLabels.length), borderWidth: 0 }]
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: colors.text, font: { size: 11 } } } } }
     });
@@ -477,7 +468,7 @@
         hbStatus = 'Offline'; hbBadge = 'badge-red';
       }
       return `<tr data-hostname="${esc(s.hostname)}">
-        <td><strong>${esc(s.hostname)}</strong>${s.maintenance_mode && s.maintenance_until && new Date(s.maintenance_until) > new Date() ? ' <span class="badge-maintenance">\ud83d\udd27 Maintenance</span>' : ''}</td>
+        <td><strong>${esc(s.hostname)}</strong>${s.maintenance_mode && s.maintenance_until && new Date(s.maintenance_until) > new Date() ? ' <span class="maintenance-icon" title="In maintenance">\ud83d\udd27</span>' : ''}</td>
         <td><span class="badge ${hbBadge}">${hbStatus}</span></td>
         <td>${esc(s.os_edition || '-')}</td>
         <td><span class="badge badge-blue">${typeLabel}</span></td>
@@ -594,7 +585,7 @@
 
     let html = '';
 
-    // Maintenance banner or set-maintenance form
+    // Maintenance banner + Add logbook entry button at top of popup
     if (maintActive) {
       const remaining = Math.max(0, Math.ceil((maintUntil - new Date()) / 60000));
       const hrs = Math.floor(remaining / 60);
@@ -609,8 +600,9 @@
         <button class="btn btn-sm" id="maintEndBtn" style="background:var(--danger);color:#fff;border:none;padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;">End Maintenance</button>
       </div>`;
     } else {
-      html += `<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      html += `<div style="padding:4px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-sm" id="maintStartBtn" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;">\ud83d\udd27 Set Maintenance</button>
+        <button class="btn btn-sm" id="logbookQuickBtn" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;">\ud83d\udcdd Add Logbook Entry</button>
         <div id="maintFormWrap" style="display:none;" class="maint-form">
           <select id="maintHours">
             <option value="0.5">30 min</option>
@@ -624,6 +616,13 @@
           <input type="text" id="maintComment" placeholder="Comment..." style="flex:1;min-width:180px;">
           <button class="btn btn-primary" id="maintConfirmBtn" style="padding:6px 14px;font-size:12px;">Confirm</button>
           <button class="btn" id="maintCancelBtn" style="padding:6px 14px;font-size:12px;">Cancel</button>
+        </div>
+        <div id="logbookQuickForm" style="display:none;flex:1;min-width:250px;">
+          <div style="display:flex;gap:8px;">
+            <input type="text" class="search-input" id="logbookQuickInput" placeholder="Logbook entry..." style="flex:1;">
+            <button class="btn btn-primary" id="logbookQuickSubmit" style="padding:6px 14px;font-size:12px;">Add</button>
+            <button class="btn" id="logbookQuickCancel" style="padding:6px 14px;font-size:12px;">Cancel</button>
+          </div>
         </div>
       </div>`;
     }
@@ -808,6 +807,7 @@
       <button class="btn btn-primary" id="logbookAddBtn" style="white-space:nowrap;">Add Entry</button>
     </div>`;
     html += `<div id="logbookEntries"><div style="text-align:center;padding:16px;color:var(--text3);"><div class="spinner"></div></div></div>`;
+    html += `<div id="logbookPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;"></div>`;
     html += `</div>`;
 
     container.innerHTML = html;
@@ -857,7 +857,8 @@
     }
 
     // Logbook
-    loadLogbook(s.hostname, container);
+    logbookPage = 1;
+    loadLogbook(s.hostname, container, 1);
     const lbInput = container.querySelector('#logbookInput');
     const lbBtn = container.querySelector('#logbookAddBtn');
     if (lbBtn) {
@@ -871,7 +872,7 @@
             body: JSON.stringify({ comment })
           });
           lbInput.value = '';
-          loadLogbook(s.hostname, container);
+          loadLogbook(s.hostname, container, 1);
         } catch (e) { console.error(e); }
         lbBtn.disabled = false;
       };
@@ -887,11 +888,15 @@
     if (maintStartBtn) {
       maintStartBtn.addEventListener('click', () => {
         maintStartBtn.style.display = 'none';
+        const lqBtn = container.querySelector('#logbookQuickBtn');
+        if (lqBtn) lqBtn.style.display = 'none';
         maintFormWrap.style.display = 'flex';
       });
       container.querySelector('#maintCancelBtn').addEventListener('click', () => {
         maintFormWrap.style.display = 'none';
         maintStartBtn.style.display = '';
+        const lqBtn = container.querySelector('#logbookQuickBtn');
+        if (lqBtn) lqBtn.style.display = '';
       });
       container.querySelector('#maintConfirmBtn').addEventListener('click', async () => {
         const hours = container.querySelector('#maintHours').value;
@@ -904,6 +909,41 @@
           openServerDetail(s.hostname);
         } catch (e) { console.error(e); }
       });
+    }
+
+    // Logbook quick-add button
+    const logbookQuickBtn = container.querySelector('#logbookQuickBtn');
+    const logbookQuickForm = container.querySelector('#logbookQuickForm');
+    if (logbookQuickBtn) {
+      logbookQuickBtn.addEventListener('click', () => {
+        logbookQuickBtn.style.display = 'none';
+        if (maintStartBtn) maintStartBtn.style.display = 'none';
+        logbookQuickForm.style.display = '';
+        container.querySelector('#logbookQuickInput').focus();
+      });
+      container.querySelector('#logbookQuickCancel').addEventListener('click', () => {
+        logbookQuickForm.style.display = 'none';
+        logbookQuickBtn.style.display = '';
+        if (maintStartBtn) maintStartBtn.style.display = '';
+      });
+      const submitQuickLogbook = async () => {
+        const input = container.querySelector('#logbookQuickInput');
+        const comment = input.value.trim();
+        if (!comment) return;
+        try {
+          await fetch('/api/servers/' + encodeURIComponent(s.hostname) + '/logbook', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment })
+          });
+          input.value = '';
+          logbookQuickForm.style.display = 'none';
+          logbookQuickBtn.style.display = '';
+          if (maintStartBtn) maintStartBtn.style.display = '';
+          loadLogbook(s.hostname, container, 1);
+        } catch (e) { console.error(e); }
+      };
+      container.querySelector('#logbookQuickSubmit').addEventListener('click', submitQuickLogbook);
+      container.querySelector('#logbookQuickInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitQuickLogbook(); });
     }
 
     if (maintEndBtn) {
@@ -984,34 +1024,78 @@
     }
   }
 
-  async function loadLogbook(hostname, container) {
+  const LOGBOOK_PER_PAGE = 10;
+  let logbookPage = 1;
+  let logbookAllEntries = [];
+
+  async function loadLogbook(hostname, container, page) {
     const el = container.querySelector('#logbookEntries');
+    const pagEl = container.querySelector('#logbookPagination');
     try {
       const r = await fetch('/api/servers/' + encodeURIComponent(hostname) + '/logbook');
-      const entries = await r.json();
-      if (!entries.length) {
-        el.innerHTML = '<p style="color:var(--text3);text-align:center;padding:16px;">No logbook entries yet</p>';
-        return;
-      }
-      el.innerHTML = entries.map(e => `
-        <div class="logbook-entry">
-          <div class="logbook-meta">
-            <span class="logbook-author">${esc(e.author)}</span>
-            <span class="logbook-date">${fmtDate(e.created_at)}</span>
-            <button class="logbook-delete" data-id="${e.id}" title="Delete entry">&times;</button>
-          </div>
-          <div class="logbook-text">${esc(e.comment)}</div>
-        </div>
-      `).join('');
-      el.querySelectorAll('.logbook-delete').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('Delete this logbook entry?')) return;
-          await fetch('/api/servers/' + encodeURIComponent(hostname) + '/logbook/' + btn.dataset.id, { method: 'DELETE' });
-          loadLogbook(hostname, container);
-        });
-      });
+      logbookAllEntries = await r.json();
+      if (page !== undefined) logbookPage = page;
+      renderLogbookPage(hostname, container);
     } catch (e) {
       el.innerHTML = '<p style="color:var(--text3)">Error loading logbook</p>';
+      if (pagEl) pagEl.innerHTML = '';
+    }
+  }
+
+  function renderLogbookPage(hostname, container) {
+    const el = container.querySelector('#logbookEntries');
+    const pagEl = container.querySelector('#logbookPagination');
+    const entries = logbookAllEntries;
+    const total = entries.length;
+    const totalPages = Math.max(1, Math.ceil(total / LOGBOOK_PER_PAGE));
+    if (logbookPage > totalPages) logbookPage = totalPages;
+    if (logbookPage < 1) logbookPage = 1;
+
+    if (!total) {
+      el.innerHTML = '<p style="color:var(--text3);text-align:center;padding:16px;">No logbook entries yet</p>';
+      if (pagEl) pagEl.innerHTML = '';
+      return;
+    }
+
+    const start = (logbookPage - 1) * LOGBOOK_PER_PAGE;
+    const pageEntries = entries.slice(start, start + LOGBOOK_PER_PAGE);
+
+    el.innerHTML = pageEntries.map(e => `
+      <div class="logbook-entry">
+        <div class="logbook-meta">
+          <span class="logbook-author">${esc(e.author)}</span>
+          <span class="logbook-date">${fmtDate(e.created_at)}</span>
+          <button class="logbook-delete" data-id="${e.id}" title="Delete entry">&times;</button>
+        </div>
+        <div class="logbook-text">${esc(e.comment)}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.logbook-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this logbook entry?')) return;
+        await fetch('/api/servers/' + encodeURIComponent(hostname) + '/logbook/' + btn.dataset.id, { method: 'DELETE' });
+        loadLogbook(hostname, container, logbookPage);
+      });
+    });
+
+    // Pagination controls
+    if (pagEl) {
+      if (totalPages <= 1) {
+        pagEl.innerHTML = `<span style="color:var(--text3);font-size:12px;">${total} entries</span>`;
+      } else {
+        let ph = `<span style="color:var(--text3);font-size:12px;">${total} entries &mdash; Page ${logbookPage} of ${totalPages}</span>&nbsp;`;
+        ph += `<button class="btn btn-sm" ${logbookPage <= 1 ? 'disabled' : ''} data-lbpage="1" style="background:var(--card2);color:var(--text);border:1px solid var(--border);">&laquo;</button>`;
+        ph += `<button class="btn btn-sm" ${logbookPage <= 1 ? 'disabled' : ''} data-lbpage="${logbookPage - 1}" style="background:var(--card2);color:var(--text);border:1px solid var(--border);">&lsaquo;</button>`;
+        ph += `<button class="btn btn-sm" ${logbookPage >= totalPages ? 'disabled' : ''} data-lbpage="${logbookPage + 1}" style="background:var(--card2);color:var(--text);border:1px solid var(--border);">&rsaquo;</button>`;
+        ph += `<button class="btn btn-sm" ${logbookPage >= totalPages ? 'disabled' : ''} data-lbpage="${totalPages}" style="background:var(--card2);color:var(--text);border:1px solid var(--border);">&raquo;</button>`;
+        pagEl.innerHTML = ph;
+        pagEl.querySelectorAll('[data-lbpage]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            logbookPage = parseInt(btn.dataset.lbpage, 10);
+            renderLogbookPage(hostname, container);
+          });
+        });
+      }
     }
   }
 
@@ -1021,6 +1105,307 @@
     });
     document.getElementById('serverModal').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+    });
+
+    // KPI overlay
+    document.getElementById('kpiOverlayClose').addEventListener('click', () => {
+      document.getElementById('kpiOverlay').classList.remove('open');
+    });
+    document.getElementById('kpiOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+    });
+  }
+
+  // KPI overlay — show filtered servers for any dashboard card
+  window.showKpiOverlay = async function(type) {
+    const modal = document.getElementById('kpiOverlay');
+    const body = document.getElementById('kpiOverlayBody');
+    const title = document.getElementById('kpiOverlayTitle');
+    body.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+    modal.classList.add('open');
+
+    const titles = {
+      domains: 'Total Domains',
+      total: 'All Servers',
+      status: 'Server Status',
+      reboot: 'Reboot Pending',
+      updates: 'Missing Updates',
+      events: 'Critical Events',
+      disk: 'Disk Space Alerts',
+      services: 'Service Issues',
+      maintenance: 'In Maintenance'
+    };
+    title.textContent = titles[type] || 'Details';
+
+    try {
+      const r = await fetch('/api/servers?limit=2000');
+      const resp = await r.json();
+      const allServers = resp.data || resp.servers || resp;
+      const stats = dashboardStats;
+
+      let servers = [];
+      switch (type) {
+        case 'domains': {
+          // Group all servers by domain
+          const byDomain = {};
+          for (const s of allServers) {
+            const d = s.domain_or_workgroup || 'UNKNOWN';
+            if (!byDomain[d]) byDomain[d] = [];
+            byDomain[d].push(s);
+          }
+          const domainNames = Object.keys(byDomain).sort();
+          let html = '';
+          for (const domain of domainNames) {
+            const srvs = byDomain[domain];
+            const onlineCount = srvs.filter(s => s.last_heartbeat && new Date(s.last_heartbeat + 'Z') > new Date(Date.now() - 180000)).length;
+            html += renderKpiDomainGroup(domain, srvs, onlineCount);
+          }
+          body.innerHTML = html || '<div class="empty-state"><p>No domain data.</p></div>';
+          wireKpiOverlayEvents(body, modal);
+          return;
+        }
+        case 'total':
+          servers = allServers;
+          break;
+        case 'status': {
+          const cutoff = Date.now() - 180000;
+          const online = allServers.filter(s => s.last_heartbeat && new Date(s.last_heartbeat + 'Z') > new Date(cutoff));
+          const offline = allServers.filter(s => s.last_heartbeat && new Date(s.last_heartbeat + 'Z') <= new Date(cutoff));
+          const noHb = allServers.filter(s => !s.last_heartbeat);
+
+          let html = '';
+          if (offline.length) html += `<h3 style="font-size:14px;color:var(--danger);margin:0 0 8px 0;">Offline (${offline.length})</h3>` + renderKpiServerTable(offline);
+          if (online.length) html += `<h3 style="font-size:14px;color:var(--success);margin:16px 0 8px 0;">Online (${online.length})</h3>` + renderKpiServerTable(online);
+          if (noHb.length) html += `<h3 style="font-size:14px;color:var(--text3);margin:16px 0 8px 0;">No Heartbeat (${noHb.length})</h3>` + renderKpiServerTable(noHb);
+          body.innerHTML = html || '<div class="empty-state"><p>No status data.</p></div>';
+          wireKpiOverlayEvents(body, modal);
+          return;
+        }
+        case 'reboot':
+          servers = allServers.filter(s => s.reboot_pending);
+          break;
+        case 'updates':
+          servers = allServers.filter(s => s.missing_critical_updates > 0);
+          break;
+        case 'events':
+          servers = allServers.filter(s => s.critical_events_24h > 0);
+          break;
+        case 'disk':
+          if (stats && stats.diskAlerts && stats.diskAlerts.length) {
+            let html = '<div class="table-scroll"><table class="data-table" style="font-size:12px;"><thead><tr><th>Hostname</th><th>Domain</th><th>Drive</th><th>Free</th><th>Usage</th><th>Level</th></tr></thead><tbody>';
+            for (const da of stats.diskAlerts) {
+              html += `<tr style="cursor:pointer;" class="kpi-srv-row" data-hostname="${esc(da.hostname)}">
+                <td><strong>${esc(da.hostname)}</strong></td>
+                <td>${esc(da.domain_or_workgroup || '-')}</td>
+                <td>${esc(da.drive)}</td>
+                <td>${da.free_gb} GB</td>
+                <td><div style="background:var(--bg2);border-radius:4px;height:8px;width:80px;"><div style="background:${da.level === 'critical' ? 'var(--danger)' : 'var(--warning)'};height:100%;border-radius:4px;width:${100 - da.pct}%;"></div></div></td>
+                <td><span class="badge ${da.level === 'critical' ? 'badge-red' : 'badge-yellow'}">${da.pct}% free</span></td>
+              </tr>`;
+            }
+            html += '</tbody></table></div>';
+            body.innerHTML = html;
+            wireKpiOverlayEvents(body, modal);
+            return;
+          }
+          servers = [];
+          break;
+        case 'services':
+          servers = allServers.filter(s => s.stopped_services > 0);
+          break;
+        case 'maintenance':
+          servers = allServers.filter(s => s.maintenance_mode);
+          break;
+        default:
+          servers = allServers;
+      }
+
+      if (!servers.length) {
+        body.innerHTML = '<div class="empty-state"><p>No servers match this filter.</p></div>';
+        return;
+      }
+      body.innerHTML = renderKpiServerTable(servers, type);
+      wireKpiOverlayEvents(body, modal);
+
+    } catch (e) {
+      body.innerHTML = '<p style="padding:20px;color:var(--danger);">Error loading data.</p>';
+    }
+  };
+
+  function renderKpiServerTable(servers, type) {
+    let extraCol = '';
+    let extraHeader = '';
+    switch (type) {
+      case 'reboot': extraHeader = '<th>Status</th>'; break;
+      case 'updates': extraHeader = '<th>Missing</th>'; break;
+      case 'events': extraHeader = '<th>Events</th>'; break;
+      case 'services': extraHeader = '<th>Stopped</th>'; break;
+      case 'maintenance': extraHeader = '<th>Until</th>'; break;
+    }
+
+    let html = `<div class="table-scroll"><table class="data-table" style="font-size:12px;"><thead><tr><th>Hostname</th><th>Domain</th><th>OS</th>${extraHeader}</tr></thead><tbody>`;
+    for (const s of servers) {
+      switch (type) {
+        case 'reboot': extraCol = '<td><span class="badge badge-yellow">Pending</span></td>'; break;
+        case 'updates': extraCol = `<td><span class="badge badge-red">${s.missing_critical_updates}</span></td>`; break;
+        case 'events': extraCol = `<td><span class="badge badge-red">${s.critical_events_24h}</span></td>`; break;
+        case 'services': extraCol = `<td><span class="badge badge-yellow">${s.stopped_services}</span></td>`; break;
+        case 'maintenance': extraCol = `<td>${s.maintenance_until ? fmtDate(s.maintenance_until) : 'Indefinite'}</td>`; break;
+        default: extraCol = '';
+      }
+      html += `<tr style="cursor:pointer;" class="kpi-srv-row" data-hostname="${esc(s.hostname)}">
+        <td><strong>${esc(s.hostname)}</strong></td>
+        <td>${esc(s.domain_or_workgroup || '-')}</td>
+        <td>${esc(s.os_edition || '-')}</td>
+        ${extraCol}
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function renderKpiDomainGroup(domain, srvs, onlineCount) {
+    let html = `<div class="panel" style="margin-bottom:12px;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;" class="kpi-group-hdr">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:18px;">🏢</span>
+          <strong style="font-size:15px;">${esc(domain)}</strong>
+          <span class="badge badge-blue" style="font-size:11px;">${srvs.length} servers</span>
+          ${onlineCount > 0 ? `<span class="badge badge-green" style="font-size:11px;">${onlineCount} online</span>` : ''}
+        </div>
+        <span style="font-size:14px;transition:transform .2s;color:var(--text3);" class="kpi-group-chev">&#9654;</span>
+      </div>
+      <div class="kpi-group-detail" style="display:none;">
+        <div class="table-scroll">
+          <table class="data-table" style="font-size:12px;"><thead><tr><th>Hostname</th><th>OS</th><th>Type</th><th>CPU</th><th>Patches</th><th>AV</th></tr></thead><tbody>`;
+    for (const s of srvs) {
+      const avOk = s.antivirus_status && ['active','enabled','up to date'].includes((s.antivirus_status||'').toLowerCase());
+      html += `<tr style="cursor:pointer;" class="kpi-srv-row" data-hostname="${esc(s.hostname)}">
+        <td><strong>${esc(s.hostname)}</strong></td>
+        <td>${esc(s.os_edition || '-')}</td>
+        <td>${s.is_virtual ? 'Virtual' : 'Physical'}</td>
+        <td>${s.cpu_usage != null ? s.cpu_usage + '%' : '-'}</td>
+        <td>${s.missing_critical_updates > 0 ? `<span class="badge badge-red">${s.missing_critical_updates}</span>` : '<span class="badge badge-green">0</span>'}</td>
+        <td><span class="badge ${avOk ? 'badge-green' : 'badge-red'}">${esc(s.antivirus_status || '-')}</span></td>
+      </tr>`;
+    }
+    html += `</tbody></table></div></div></div>`;
+    return html;
+  }
+
+  function wireKpiOverlayEvents(body, modal) {
+    // Expand/collapse groups
+    body.querySelectorAll('.kpi-group-hdr').forEach(hdr => {
+      hdr.addEventListener('click', () => {
+        const detail = hdr.nextElementSibling;
+        const chev = hdr.querySelector('.kpi-group-chev');
+        const isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'block';
+        chev.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
+    });
+    // Row clicks → open server detail
+    body.querySelectorAll('.kpi-srv-row').forEach(row => {
+      row.addEventListener('click', () => {
+        modal.classList.remove('open');
+        openServerDetail(row.dataset.hostname);
+      });
+    });
+  }
+
+  // =========================================================================
+  //  MAINTENANCE VIEW (Main Tab)
+  // =========================================================================
+  let maintenanceData = [];
+  let maintenanceLoaded = false;
+
+  async function loadMaintenanceView() {
+    const content = document.getElementById('maintenanceContent');
+    if (!maintenanceLoaded) {
+      content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+    }
+
+    try {
+      const r = await fetch('/api/servers?limit=2000');
+      const resp = await r.json();
+      const allServers = resp.data || resp.servers || resp;
+
+      maintenanceData = allServers.filter(s => s.maintenance_mode && s.maintenance_until && new Date(s.maintenance_until) > new Date());
+
+      // Populate domain filter
+      const domainFilter = document.getElementById('maintDomainFilter');
+      const domains = [...new Set(allServers.map(s => s.domain_or_workgroup).filter(Boolean))].sort();
+      const curDom = domainFilter.value;
+      domainFilter.innerHTML = '<option value="">All Domains</option>' +
+        domains.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      domainFilter.value = curDom;
+
+      renderMaintenanceView(maintenanceData);
+
+      if (!maintenanceLoaded) {
+        domainFilter.addEventListener('change', filterMaintenanceView);
+        document.getElementById('maintSearch').addEventListener('input', filterMaintenanceView);
+        maintenanceLoaded = true;
+      }
+    } catch (e) {
+      content.innerHTML = '<div class="empty-state"><p>Error loading maintenance data.</p></div>';
+    }
+  }
+
+  function filterMaintenanceView() {
+    const domain = document.getElementById('maintDomainFilter')?.value || '';
+    const q = document.getElementById('maintSearch').value.toLowerCase().trim();
+    let filtered = maintenanceData;
+    if (domain) filtered = filtered.filter(s => s.domain_or_workgroup === domain);
+    if (q) filtered = filtered.filter(s =>
+      s.hostname.toLowerCase().includes(q) ||
+      (s.maintenance_comment || '').toLowerCase().includes(q) ||
+      (s.maintenance_set_by || '').toLowerCase().includes(q)
+    );
+    renderMaintenanceView(filtered);
+  }
+
+  function renderMaintenanceView(servers) {
+    const content = document.getElementById('maintenanceContent');
+    if (!servers.length) {
+      content.innerHTML = '<div class="empty-state"><p>No servers currently in maintenance.</p></div>';
+      return;
+    }
+    let html = `<div class="table-scroll"><table class="data-table" style="font-size:13px;">
+      <thead><tr><th>Hostname</th><th>Domain</th><th>Until</th><th>Remaining</th><th>Comment</th><th>Set By</th><th></th></tr></thead><tbody>`;
+    for (const s of servers) {
+      const until = new Date(s.maintenance_until);
+      const remaining = Math.max(0, Math.ceil((until - new Date()) / 60000));
+      const hrs = Math.floor(remaining / 60);
+      const mins = remaining % 60;
+      html += `<tr>
+        <td style="cursor:pointer;" class="maint-srv-link" data-hostname="${esc(s.hostname)}"><strong>${esc(s.hostname)}</strong></td>
+        <td>${esc(s.domain_or_workgroup || '-')}</td>
+        <td>${fmtDate(s.maintenance_until)}</td>
+        <td><span class="badge badge-yellow">${hrs}h ${mins}m</span></td>
+        <td>${esc(s.maintenance_comment || '-')}</td>
+        <td>${esc(s.maintenance_set_by || '-')}</td>
+        <td><button class="btn btn-sm maint-end-btn" data-hostname="${esc(s.hostname)}" style="background:var(--danger);color:#fff;border:none;padding:4px 10px;border-radius:var(--radius);cursor:pointer;font-size:11px;">End</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    content.innerHTML = html;
+
+    // Wire hostname clicks to open server detail
+    content.querySelectorAll('.maint-srv-link').forEach(el => {
+      el.addEventListener('click', () => openServerDetail(el.dataset.hostname));
+    });
+
+    // Wire end-maintenance buttons
+    content.querySelectorAll('.maint-end-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const hostname = btn.dataset.hostname;
+        if (!confirm('End maintenance mode for ' + hostname + '?')) return;
+        try {
+          await fetch('/api/servers/' + encodeURIComponent(hostname) + '/maintenance', { method: 'DELETE' });
+          loadMaintenanceView();
+        } catch (e) { console.error(e); }
+      });
     });
   }
 
@@ -1118,128 +1503,177 @@
   }
 
   // =========================================================================
-  //  GROUP POLICY VIEW
+  //  DOMAINS VIEW (Group Policies + DNS on separate sub-tabs)
   // =========================================================================
-  let gpoData = [];
-  let gpoLoaded = false;
+  let domainsGpoData = [];
+  let domainsDnsData = [];
+  let domainsLoaded = false;
 
-  async function loadGPOView() {
-    if (gpoLoaded) return;
+  async function loadDomainsView() {
+    if (domainsLoaded) return;
 
-    const content = document.getElementById('gpoContent');
-    content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+    const gpoContent = document.getElementById('domainsGpoContent');
+    const dnsContent = document.getElementById('domainsDnsContent');
+    gpoContent.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+    dnsContent.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
+
+    // Wire sub-tab switching
+    document.querySelectorAll('#domainsSubTabs .detail-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#domainsSubTabs .detail-tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('dtab-gpo').classList.toggle('active', btn.dataset.dtab === 'gpo');
+        document.getElementById('dtab-dns').classList.toggle('active', btn.dataset.dtab === 'dns');
+      });
+    });
 
     try {
-      // Load domains for filter
-      const domainsR = await fetch('/api/gpo/domains');
-      const domains = await domainsR.json();
-      const domainSel = document.getElementById('gpoDomainFilter');
+      const [gpoDomR, gpoR, dnsDomR, dnsR] = await Promise.all([
+        fetch('/api/gpo/domains'), fetch('/api/gpo'),
+        fetch('/api/dns/domains'), fetch('/api/dns')
+      ]);
+      const gpoDomains = await gpoDomR.json();
+      domainsGpoData = await gpoR.json();
+      const dnsDomains = await dnsDomR.json();
+      domainsDnsData = await dnsR.json();
+
+      // Merge domain lists
+      const allDomains = [...new Set([...gpoDomains, ...dnsDomains])].sort();
+      const domainSel = document.getElementById('domainsDomainFilter');
       domainSel.innerHTML = '<option value="">All Domains</option>' +
-        domains.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+        allDomains.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
 
-      // Load all GPOs
-      const r = await fetch('/api/gpo');
-      gpoData = await r.json();
-      renderGPOView(gpoData);
+      renderGpoTab(domainsGpoData);
+      renderDnsTab(domainsDnsData);
 
-      // Wire filters
-      domainSel.addEventListener('change', filterGPOView);
-      document.getElementById('gpoSearch').addEventListener('input', filterGPOView);
+      domainSel.addEventListener('change', filterDomainsView);
+      document.getElementById('domainsSearch').addEventListener('input', filterDomainsView);
 
-      gpoLoaded = true;
+      domainsLoaded = true;
     } catch (e) {
-      content.innerHTML = '<div class="empty-state"><p>Error loading group policies. Run Collect-DomainGPO.ps1 on a domain controller to collect GPO data.</p></div>';
+      gpoContent.innerHTML = '<div class="empty-state"><p>Error loading domain data.</p></div>';
+      dnsContent.innerHTML = '<div class="empty-state"><p>Error loading domain data.</p></div>';
     }
   }
 
-  function filterGPOView() {
-    const domain = document.getElementById('gpoDomainFilter').value;
-    const q = document.getElementById('gpoSearch').value.toLowerCase().trim();
-    let filtered = gpoData;
-    if (domain) filtered = filtered.filter(g => g.domain === domain);
-    if (q) filtered = filtered.filter(g =>
-      (g.gpo_name || '').toLowerCase().includes(q) ||
-      (g.gpo_guid || '').toLowerCase().includes(q) ||
-      (g.description || '').toLowerCase().includes(q) ||
-      (g.settings || []).some(s => (s.setting_name || '').toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q))
-    );
-    renderGPOView(filtered);
+  function filterDomainsView() {
+    const domain = document.getElementById('domainsDomainFilter').value;
+    const q = document.getElementById('domainsSearch').value.toLowerCase().trim();
+
+    let filteredGpo = domainsGpoData;
+    let filteredDns = domainsDnsData;
+
+    if (domain) {
+      filteredGpo = filteredGpo.filter(g => g.domain === domain);
+      filteredDns = filteredDns.filter(z => z.domain === domain);
+    }
+    if (q) {
+      filteredGpo = filteredGpo.filter(g =>
+        (g.gpo_name || '').toLowerCase().includes(q) ||
+        (g.gpo_guid || '').toLowerCase().includes(q) ||
+        (g.description || '').toLowerCase().includes(q) ||
+        (g.settings || []).some(s => (s.setting_name || '').toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q))
+      );
+      filteredDns = filteredDns.filter(z =>
+        (z.zone_name || '').toLowerCase().includes(q) ||
+        (z.zone_type || '').toLowerCase().includes(q) ||
+        (z.records || []).some(r => (r.record_name || '').toLowerCase().includes(q) || (r.record_data || '').toLowerCase().includes(q) || (r.record_type || '').toLowerCase().includes(q))
+      );
+    }
+    renderGpoTab(filteredGpo);
+    renderDnsTab(filteredDns);
   }
 
-  function renderGPOView(gpos) {
-    const content = document.getElementById('gpoContent');
+  function renderGpoTab(gpos) {
+    const content = document.getElementById('domainsGpoContent');
     if (!gpos.length) {
-      content.innerHTML = '<div class="empty-state"><p>No group policies found. Run <strong>Collect-DomainGPO.ps1</strong> on a domain controller to populate data.</p></div>';
+      content.innerHTML = '<div class="empty-state"><p>No group policies found.</p></div>';
       return;
     }
 
+    const domainSet = new Set();
+    gpos.forEach(g => domainSet.add(g.domain));
+    const domainList = [...domainSet].sort();
+
     let html = '';
-    for (const gpo of gpos) {
-      const statusBadge = (gpo.gpo_status || '').toLowerCase().includes('all') ? 'badge-green'
-        : (gpo.gpo_status || '').toLowerCase().includes('disabled') ? 'badge-red' : 'badge-yellow';
+    for (const domain of domainList) {
+      const domGpos = gpos.filter(g => g.domain === domain);
 
-      html += `<div class="panel" style="margin-bottom:12px;">
-        <div style="padding:16px;cursor:pointer;" class="gpo-header" data-gpo-id="${gpo.id}">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:12px;">
-              <strong style="font-size:14px;">${esc(gpo.gpo_name || '-')}</strong>
-              <span class="badge ${statusBadge}">${esc(gpo.gpo_status || '-')}</span>
-              <span class="badge badge-blue">${esc(gpo.domain || '-')}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:var(--text3);">
-              ${gpo.modification_time ? '<span>Modified: ' + fmtDate(gpo.modification_time) + '</span>' : ''}
-              <span style="font-size:16px;transition:transform .2s;" class="gpo-chevron">&#9654;</span>
-            </div>
+      html += `<div class="panel" style="margin-bottom:20px;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:20px;">🏢</span>
+            <h2 style="margin:0;font-size:18px;">${esc(domain)}</h2>
           </div>
-          ${gpo.description ? `<div style="font-size:12px;color:var(--text3);margin-top:6px;">${esc(gpo.description)}</div>` : ''}
+          <div style="font-size:12px;color:var(--text3);"><strong>${domGpos.length}</strong> GPOs</div>
         </div>
-        <div class="gpo-detail" style="display:none;border-top:1px solid var(--border);padding:16px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:12px;">
-            <div><span style="color:var(--text3);">GUID:</span> <span style="font-family:monospace;">${esc(gpo.gpo_guid || '-')}</span></div>
-            <div><span style="color:var(--text3);">Created:</span> ${fmtDate(gpo.creation_time)}</div>
-            <div><span style="color:var(--text3);">WMI Filter:</span> ${esc(gpo.wmi_filter || 'None')}</div>
-            <div><span style="color:var(--text3);">Modified:</span> ${fmtDate(gpo.modification_time)}</div>
-          </div>`;
+        <div style="padding:20px;">`;
 
-      // Links section
-      if (gpo.links && gpo.links.length) {
-        html += `<h4 style="font-size:12px;text-transform:uppercase;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">Links</h4>
-          <table class="mini-table" style="margin-bottom:16px;"><thead><tr><th>Target</th><th>Enabled</th><th>Enforced</th></tr></thead><tbody>`;
-        for (const link of gpo.links) {
-          html += `<tr>
-            <td>${esc(link.target || '-')}</td>
-            <td><span class="badge ${link.link_enabled ? 'badge-green' : 'badge-red'}">${link.link_enabled ? 'Yes' : 'No'}</span></td>
-            <td><span class="badge ${link.enforced ? 'badge-yellow' : 'badge-gray'}">${link.enforced ? 'Yes' : 'No'}</span></td>
-          </tr>`;
-        }
-        html += `</tbody></table>`;
-      }
+      for (const gpo of domGpos) {
+        const statusBadge = (gpo.gpo_status || '').toLowerCase().includes('all') ? 'badge-green'
+          : (gpo.gpo_status || '').toLowerCase().includes('disabled') ? 'badge-red' : 'badge-yellow';
 
-      // Settings section
-      if (gpo.settings && gpo.settings.length) {
-        // Group settings by area > category
-        const grouped = {};
-        for (const s of gpo.settings) {
-          const key = (s.area || 'Other') + ' / ' + (s.category || 'General');
-          if (!grouped[key]) grouped[key] = [];
-          grouped[key].push(s);
-        }
+        html += `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;">
+          <div style="padding:12px 16px;cursor:pointer;" class="gpo-header" data-gpo-id="${gpo.id}">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:14px;">📋</span>
+                <strong style="font-size:13px;">${esc(gpo.gpo_name || '-')}</strong>
+                <span class="badge ${statusBadge}" style="font-size:11px;">${esc(gpo.gpo_status || '-')}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text3);">
+                ${gpo.modification_time ? '<span>Modified: ' + fmtDate(gpo.modification_time) + '</span>' : ''}
+                <span style="font-size:14px;transition:transform .2s;" class="gpo-chevron">&#9654;</span>
+              </div>
+            </div>
+            ${gpo.description ? `<div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:24px;">${esc(gpo.description)}</div>` : ''}
+          </div>
+          <div class="gpo-detail" style="display:none;border-top:1px solid var(--border);padding:14px 16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;font-size:12px;">
+              <div><span style="color:var(--text3);">GUID:</span> <span style="font-family:monospace;">${esc(gpo.gpo_guid || '-')}</span></div>
+              <div><span style="color:var(--text3);">Created:</span> ${fmtDate(gpo.creation_time)}</div>
+              <div><span style="color:var(--text3);">WMI Filter:</span> ${esc(gpo.wmi_filter || 'None')}</div>
+              <div><span style="color:var(--text3);">Modified:</span> ${fmtDate(gpo.modification_time)}</div>
+            </div>`;
 
-        html += `<h4 style="font-size:12px;text-transform:uppercase;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">Settings (${gpo.settings.length})</h4>
-          <div style="max-height:400px;overflow-y:auto;"><table class="mini-table"><thead><tr><th>Area / Category</th><th>Setting</th><th>Value</th></tr></thead><tbody>`;
-        for (const [key, settings] of Object.entries(grouped)) {
-          for (let j = 0; j < settings.length; j++) {
-            const s = settings[j];
+        if (gpo.links && gpo.links.length) {
+          html += `<h4 style="font-size:11px;text-transform:uppercase;color:var(--text3);letter-spacing:.5px;margin-bottom:6px;">Links</h4>
+            <table class="mini-table" style="margin-bottom:14px;"><thead><tr><th>Target</th><th>Enabled</th><th>Enforced</th></tr></thead><tbody>`;
+          for (const link of gpo.links) {
             html += `<tr>
-              ${j === 0 ? `<td rowspan="${settings.length}" style="vertical-align:top;font-weight:500;">${esc(key)}</td>` : ''}
-              <td>${esc(s.setting_name || '-')}</td>
-              <td>${esc(s.setting_value || '-')}</td>
+              <td>${esc(link.target || '-')}</td>
+              <td><span class="badge ${link.link_enabled ? 'badge-green' : 'badge-red'}">${link.link_enabled ? 'Yes' : 'No'}</span></td>
+              <td><span class="badge ${link.enforced ? 'badge-yellow' : 'badge-gray'}">${link.enforced ? 'Yes' : 'No'}</span></td>
             </tr>`;
           }
+          html += `</tbody></table>`;
         }
-        html += `</tbody></table></div>`;
-      } else {
-        html += `<p style="color:var(--text3);font-size:12px;">No settings configured</p>`;
+
+        if (gpo.settings && gpo.settings.length) {
+          const grouped = {};
+          for (const s of gpo.settings) {
+            const key = (s.area || 'Other') + ' / ' + (s.category || 'General');
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(s);
+          }
+          html += `<h4 style="font-size:11px;text-transform:uppercase;color:var(--text3);letter-spacing:.5px;margin-bottom:6px;">Settings (${gpo.settings.length})</h4>
+            <div style="max-height:300px;overflow-y:auto;"><table class="mini-table"><thead><tr><th>Area / Category</th><th>Setting</th><th>Value</th></tr></thead><tbody>`;
+          for (const [key, settings] of Object.entries(grouped)) {
+            for (let j = 0; j < settings.length; j++) {
+              const s = settings[j];
+              html += `<tr>
+                ${j === 0 ? `<td rowspan="${settings.length}" style="vertical-align:top;font-weight:500;">${esc(key)}</td>` : ''}
+                <td>${esc(s.setting_name || '-')}</td>
+                <td>${esc(s.setting_value || '-')}</td>
+              </tr>`;
+            }
+          }
+          html += `</tbody></table></div>`;
+        } else {
+          html += `<p style="color:var(--text3);font-size:12px;margin:0;">No settings configured</p>`;
+        }
+
+        html += `</div></div>`;
       }
 
       html += `</div></div>`;
@@ -1247,11 +1681,111 @@
 
     content.innerHTML = html;
 
-    // Wire expand/collapse
     content.querySelectorAll('.gpo-header').forEach(header => {
       header.addEventListener('click', () => {
         const detail = header.nextElementSibling;
         const chevron = header.querySelector('.gpo-chevron');
+        const isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'block';
+        chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
+    });
+  }
+
+  function renderDnsTab(zones) {
+    const content = document.getElementById('domainsDnsContent');
+    if (!zones.length) {
+      content.innerHTML = '<div class="empty-state"><p>No DNS zones found.</p></div>';
+      return;
+    }
+
+    const domainSet = new Set();
+    zones.forEach(z => domainSet.add(z.domain));
+    const domainList = [...domainSet].sort();
+
+    let html = '';
+    for (const domain of domainList) {
+      const domZones = zones.filter(z => z.domain === domain);
+      const totalRecords = domZones.reduce((s, z) => s + (z.records ? z.records.length : (z.record_count || 0)), 0);
+
+      html += `<div class="panel" style="margin-bottom:20px;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:20px;">🏢</span>
+            <h2 style="margin:0;font-size:18px;">${esc(domain)}</h2>
+          </div>
+          <div style="display:flex;gap:12px;font-size:12px;color:var(--text3);">
+            <span><strong>${domZones.length}</strong> DNS zones</span>
+            <span>•</span>
+            <span><strong>${totalRecords}</strong> records</span>
+          </div>
+        </div>
+        <div style="padding:20px;">`;
+
+      for (const zone of domZones) {
+        const typeBadge = zone.zone_type === 'Primary' ? 'badge-green' : zone.zone_type === 'Secondary' ? 'badge-blue' : 'badge-yellow';
+        const recCount = zone.records ? zone.records.length : (zone.record_count || 0);
+
+        html += `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;">
+          <div style="padding:12px 16px;cursor:pointer;" class="dns-header" data-zone-id="${zone.id}">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:14px;">🌐</span>
+                <strong style="font-size:13px;">${esc(zone.zone_name || '-')}</strong>
+                <span class="badge ${typeBadge}" style="font-size:11px;">${esc(zone.zone_type || '-')}</span>
+                ${zone.is_reverse_lookup ? '<span class="badge badge-yellow" style="font-size:11px;">Reverse</span>' : ''}
+                ${zone.is_ad_integrated ? '<span class="badge badge-green" style="font-size:11px;">AD-Integrated</span>' : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text3);">
+                <span>${recCount} records</span>
+                <span style="font-size:14px;transition:transform .2s;" class="dns-chevron">&#9654;</span>
+              </div>
+            </div>
+          </div>
+          <div class="dns-detail" style="display:none;border-top:1px solid var(--border);padding:14px 16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;font-size:12px;">
+              <div><span style="color:var(--text3);">Zone Type:</span> ${esc(zone.zone_type || '-')}</div>
+              <div><span style="color:var(--text3);">Dynamic Update:</span> ${esc(zone.dynamic_update || '-')}</div>
+              <div><span style="color:var(--text3);">Aging:</span> ${zone.aging_enabled ? 'Enabled' : 'Disabled'}</div>
+            </div>`;
+
+        if (zone.records && zone.records.length) {
+          const byType = {};
+          for (const r of zone.records) {
+            const t = r.record_type || 'Other';
+            if (!byType[t]) byType[t] = [];
+            byType[t].push(r);
+          }
+          html += `<div style="max-height:300px;overflow-y:auto;"><table class="mini-table"><thead><tr><th>Type</th><th>Name</th><th>Data</th><th>TTL</th></tr></thead><tbody>`;
+          for (const [type, records] of Object.entries(byType)) {
+            for (let j = 0; j < records.length; j++) {
+              const r = records[j];
+              const typeBadgeClass = type === 'A' ? 'badge-green' : type === 'AAAA' ? 'badge-blue' : type === 'CNAME' ? 'badge-yellow' : type === 'MX' ? 'badge-red' : type === 'SRV' ? 'badge-blue' : 'badge-gray';
+              html += `<tr>
+                ${j === 0 ? `<td rowspan="${records.length}" style="vertical-align:top;"><span class="badge ${typeBadgeClass}">${esc(type)}</span></td>` : ''}
+                <td>${esc(r.record_name || '@')}</td>
+                <td style="font-family:monospace;font-size:12px;">${esc(r.record_data || '-')}</td>
+                <td>${esc(r.ttl || '-')}</td>
+              </tr>`;
+            }
+          }
+          html += `</tbody></table></div>`;
+        } else {
+          html += `<p style="color:var(--text3);font-size:12px;margin:0;">No records loaded</p>`;
+        }
+
+        html += `</div></div>`;
+      }
+
+      html += `</div></div>`;
+    }
+
+    content.innerHTML = html;
+
+    content.querySelectorAll('.dns-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const detail = header.nextElementSibling;
+        const chevron = header.querySelector('.dns-chevron');
         const isOpen = detail.style.display !== 'none';
         detail.style.display = isOpen ? 'none' : 'block';
         chevron.style.transform = isOpen ? '' : 'rotate(90deg)';

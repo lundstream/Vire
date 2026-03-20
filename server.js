@@ -229,6 +229,44 @@ app.get('/api/gpo/domains', requireLogin, (req, res) => {
 });
 
 // =========================================================================
+//  DNS POST (API key auth — from DC collection script)
+// =========================================================================
+app.post('/api/dns', requireApiKey, (req, res) => {
+  try {
+    const { domain, zones } = req.body;
+    if (!domain) return res.status(400).json({ error: 'domain required' });
+    if (!Array.isArray(zones)) return res.status(400).json({ error: 'zones array required' });
+    db.upsertDomainDNS(domain, zones);
+    res.json({ ok: true, count: zones.length });
+  } catch (e) {
+    console.error('DNS POST error:', e.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// =========================================================================
+//  DNS GET (session auth)
+// =========================================================================
+app.get('/api/dns', requireLogin, (req, res) => {
+  const domain = req.query.domain || '';
+  const allowed = db.getUserAllowedDomains(req.session.user.id);
+  if (allowed && allowed.length === 0) return res.json([]);
+  if (domain && allowed && !allowed.includes(domain.toUpperCase())) return res.status(403).json({ error: 'No access to this domain' });
+  const zones = db.getDomainDNS(domain || null);
+  if (allowed && !domain) {
+    return res.json(zones.filter(z => allowed.includes(z.domain)));
+  }
+  res.json(zones);
+});
+
+app.get('/api/dns/domains', requireLogin, (req, res) => {
+  const allowed = db.getUserAllowedDomains(req.session.user.id);
+  const domains = db.getDNSDomains();
+  if (allowed) return res.json(domains.filter(d => allowed.includes(d)));
+  res.json(domains);
+});
+
+// =========================================================================
 //  INVENTORY GET (session auth, users view data here)
 // =========================================================================
 app.get('/api/dashboard/stats', requireLogin, (req, res) => {
@@ -243,7 +281,7 @@ app.get('/api/dashboard/stats', requireLogin, (req, res) => {
 
 app.get('/api/servers', requireLogin, (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 100));
   const sort = (req.query.sort || 'hostname');
   const dir = (req.query.dir || 'ASC');
   const search = (req.query.q || '').trim();
@@ -461,7 +499,8 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, filePath) {
     if (/\.(html|js|css)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
     }
   }
 }));
