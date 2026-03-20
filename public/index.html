@@ -387,6 +387,16 @@
     }
     .modal-header h2 { font-size: 18px; font-weight: 700; }
     .modal-body { padding: 24px; }
+    .code-block { position: relative; }
+    .code-block pre { margin: 0; }
+    .code-copy {
+      position: absolute; top: 6px; right: 6px;
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; font-size: 12px;
+      opacity: 0; transition: opacity .2s;
+    }
+    .code-block:hover .code-copy { opacity: 1; }
+    .code-copy:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
     .modal-close {
       background: none; border: none; color: var(--text2);
       cursor: pointer; font-size: 24px; padding: 4px 8px;
@@ -873,13 +883,19 @@
         <h3 style="margin-top:0;">Collect-ServerInventory.ps1</h3>
         <p>The PowerShell collection script gathers OS info, hardware, network, disks, patches, services, roles, security status, firewall rules, GPOs, local policies, event logs, and more. All operations are read-only.</p>
         <h3>Parameters</h3>
-        <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">.\Collect-ServerInventory.ps1 -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+        <div class="code-block">
+          <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">.\Collect-ServerInventory.ps1 -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+          <button class="code-copy" title="Copy">Copy</button>
+        </div>
         <h3>Deployment as Scheduled Task</h3>
         <ol style="padding-left:20px;">
           <li>Copy <strong>Collect-ServerInventory.ps1</strong> to each server (e.g. <code>C:\Scripts\</code>).</li>
           <li>Create a Scheduled Task running as <strong>SYSTEM</strong>.</li>
           <li>Set the action to:<br>
-            <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">powershell.exe -ExecutionPolicy Bypass -File "C:\Scripts\Collect-ServerInventory.ps1" -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+            <div class="code-block">
+              <pre style="background:var(--bg2);padding:12px;border-radius:var(--radius);overflow-x:auto;font-size:13px;">powershell.exe -ExecutionPolicy Bypass -File "C:\Scripts\Collect-ServerInventory.ps1" -ApiUrl "https://&lt;vire-host&gt;/api/inventory" -ApiKey "&lt;your-api-key&gt;"</pre>
+              <button class="code-copy" title="Copy">Copy</button>
+            </div>
           </li>
           <li>Set the trigger to run every <strong>4–6 hours</strong>.</li>
         </ol>

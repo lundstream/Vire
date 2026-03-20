@@ -78,6 +78,15 @@
       document.getElementById(key + 'ModalClose').addEventListener('click', () => modal.classList.remove('open'));
       modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
     });
+    document.querySelectorAll('.code-copy').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.parentElement.querySelector('pre').textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = 'Copy', 1500);
+        });
+      });
+    });
   }
 
   // =========================================================================
